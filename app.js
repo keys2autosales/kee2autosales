@@ -43,24 +43,46 @@ const CLOUD_LEADS_API='/api/leads';
 
 function leadFromCloud(row){
   return {
-    id:row.id,
-    name:row.name||'',
-    phone:row.phone||'',
-    source:row.source||'',
-    vehicle:row.vehicle_name||'',
-    stock:row.stock_number||'',
-    stage:row.stage||'New Lead',
-    application:row.application_status||'Not Sent',
-    appointment:row.appointment_at ? String(row.appointment_at).slice(0,16) : '',
-    nextFollowUp:row.next_follow_up_at ? String(row.next_follow_up_at).slice(0,16) : ''
+    id: row.id,
+    name: row.name || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    source: row.source || '',
+    vehicle: row.vehicle_name || '',
+    stock: row.stock_number || '',
+    stage: row.stage || 'New Lead',
+    application: row.application_status || 'Not Sent',
+    cashOrFinance: row.cash_or_finance || '',
+    hasTrade: Boolean(row.has_trade),
+    notes: row.notes || '',
+    appointment: row.appointment_at
+      ? String(row.appointment_at).slice(0,16)
+      : '',
+    lastContact: row.last_contact_at
+      ? String(row.last_contact_at).slice(0,16)
+      : '',
+    nextFollowUp: row.next_follow_up_at
+      ? String(row.next_follow_up_at).slice(0,16)
+      : ''
   };
 }
+
 function leadToCloud(lead){
   return {
-    name:lead.name||'', phone:lead.phone||'', source:lead.source||'',
-    vehicle_name:lead.vehicle||'', stock_number:lead.stock||'',
-    stage:lead.stage||'New Lead', application_status:lead.application||'Not Sent',
-    appointment_at:lead.appointment||null, next_follow_up_at:lead.nextFollowUp||null
+    name: lead.name || '',
+    phone: lead.phone || '',
+    email: lead.email || null,
+    source: lead.source || '',
+    vehicle_name: lead.vehicle || '',
+    stock_number: lead.stock || '',
+    stage: lead.stage || 'New Lead',
+    application_status: lead.application || 'Not Sent',
+    cash_or_finance: lead.cashOrFinance || null,
+    has_trade: Boolean(lead.hasTrade),
+    notes: lead.notes || null,
+    appointment_at: lead.appointment || null,
+    last_contact_at: lead.lastContact || null,
+    next_follow_up_at: lead.nextFollowUp || null
   };
 }
 async function cloudRequest(url,options={}){
