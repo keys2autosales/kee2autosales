@@ -35,7 +35,6 @@
     if(clearFirst){nativeSet(el,'');fire(el);}
     nativeSet(el,String(value));
     fire(el);
-    el.blur();
     return true;
   }
 
@@ -63,6 +62,24 @@
     return null;
   }
 
+  function fieldInput(label){
+    const wanted=norm(label);
+    const candidates=[...document.querySelectorAll('input')];
+    for(const el of candidates){
+      const aria=norm(el.getAttribute('aria-label'));
+      const ph=norm(el.getAttribute('placeholder'));
+      if(aria===wanted || ph===wanted) return el;
+    }
+    for(const el of candidates){
+      let p=el;
+      for(let i=0;i<4&&p;i++,p=p.parentElement){
+        const text=norm(p.textContent);
+        if(text && text.length<140 && (text===wanted || text.startsWith(wanted+' '))) return el;
+      }
+    }
+    return null;
+  }
+
   function selectTrigger(label){
     const wanted=norm(label);
     const triggers=[...document.querySelectorAll('[role="combobox"],[aria-haspopup="listbox"]')];
@@ -81,6 +98,9 @@
   }
 
   function selectedText(label){
+    const input=fieldInput(label);
+    const inputValue=String(input?.value||'').trim();
+    if(inputValue) return inputValue;
     const t=selectTrigger(label);
     if(!t) return '';
     const aria=String(t.getAttribute('aria-valuetext')||t.getAttribute('aria-label')||'').trim();
@@ -93,6 +113,19 @@
     while(Date.now()-start<timeout){const result=fn();if(result)return result;await sleep(250);}return null;
   }
 
+  function visibleOptions(){
+    return [...document.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"]')]
+      .filter(o=>o.offsetParent!==null);
+  }
+
+  function findOption(value){
+    const wanted=norm(value);
+    const opts=visibleOptions();
+    return opts.find(o=>norm(o.textContent)===wanted)
+      ||opts.find(o=>norm(o.textContent).startsWith(wanted+' '))
+      ||opts.find(o=>norm(o.textContent).includes(wanted));
+  }
+
   async function chooseExact(label,value){
     if(value===undefined || value===null || value==='') return false;
     const trigger=await waitFor(()=>selectTrigger(label),6000);
@@ -100,15 +133,37 @@
     trigger.scrollIntoView({block:'center'});
     trigger.click();
     await sleep(700);
-    const wanted=norm(value);
-    const opts=[...document.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"]')];
-    const target=opts.find(o=>norm(o.textContent)===wanted)
-      ||opts.find(o=>norm(o.textContent).startsWith(wanted+' '))
-      ||opts.find(o=>norm(o.textContent).includes(wanted));
+    const target=findOption(value);
     if(!target){document.body.click();return false;}
     target.click();
     await sleep(800);
-    return norm(selectedText(label)).includes(wanted);
+    return norm(selectedText(label)).includes(norm(value));
+  }
+
+  async function chooseModel(value){
+    if(!value) return false;
+    const wanted=norm(value);
+
+    // Facebook sometimes renders Model as a searchable input instead of a normal dropdown.
+    const input=await waitFor(()=>fieldInput('Model'),3500);
+    if(input){
+      input.scrollIntoView({block:'center'});
+      setValue(input,value,{clearFirst:true});
+      await sleep(900);
+      let target=findOption(value);
+      if(target){
+        target.click();
+        await sleep(850);
+      }else{
+        input.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter',code:'Enter'}));
+        input.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Enter',code:'Enter'}));
+        await sleep(850);
+      }
+      if(norm(String(input.value||''))===wanted || norm(selectedText('Model')).includes(wanted)) return true;
+    }
+
+    // Fallback for accounts where Model is a normal Facebook select.
+    return chooseExact('Model',value);
   }
 
   function description(p){
@@ -128,7 +183,7 @@
   function note(text,ok=true){
     document.querySelector('.k2-fill-note')?.remove();
     const n=document.createElement('div');n.className='k2-fill-note';n.textContent=text;
-    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'460px'});
+    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'500px'});
     document.body.appendChild(n);setTimeout(()=>n.remove(),12000);
   }
 
@@ -137,22 +192,21 @@
     p.vin=String(p.vin).toUpperCase().replace(/[^A-Z0-9]/g,'');
     const results={};
 
-    note(`Keys2AutoSales v0.1.4: loading ${p.year} ${p.make} ${p.model} without Facebook VIN decoding…`);
+    note(`Keys2AutoSales v0.1.5: loading ${p.year} ${p.make} ${p.model}…`);
 
-    // Facebook VIN decoding has produced stale/wrong identities in testing.
-    // The VIN field is optional, so keep it blank and put the real VIN in the description instead.
+    // Keep Facebook's optional VIN decoder out of the workflow because it produced incorrect identities in testing.
     const vinInput=await waitFor(()=>exactInput(['VIN']),7000);
-    if(vinInput && vinInput.value){clearValue(vinInput);await sleep(1200);}
+    if(vinInput && vinInput.value){clearValue(vinInput);await sleep(900);}
     results.vinSkipped=true;
 
     results.vehicleType=await chooseExact('Vehicle type',p.vehicleType||'Car/Truck');
-    await sleep(700);
+    await sleep(650);
     results.year=await chooseExact('Year',String(p.year));
-    await sleep(700);
+    await sleep(650);
     results.make=await chooseExact('Make',p.make);
-    await sleep(700);
-    results.model=await chooseExact('Model',p.model);
-    await sleep(700);
+    await sleep(850);
+    results.model=await chooseModel(p.model);
+    await sleep(850);
 
     const checks={
       year:norm(selectedText('Year')).includes(norm(String(p.year))),
@@ -172,7 +226,7 @@
     results.description=setValue(exactInput(['Description']),p.description||description(p),{clearFirst:true});
 
     chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
-    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. VIN decoder bypassed; real VIN is in the description. Review photos/details, then publish manually.`,true);
+    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. Review photos/details, then publish manually.`,true);
   }
 
   const payload=decodePayload();
