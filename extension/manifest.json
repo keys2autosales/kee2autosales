@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Keys2AutoSales Social Listing Assistant",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Helps Keys2AutoSales users autofill Facebook Marketplace vehicle listings from the Command Center.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://www.facebook.com/*"],
