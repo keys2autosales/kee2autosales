@@ -127,6 +127,29 @@
     return model.includes(norm(p.model)) && page.includes(norm(String(p.year))) && page.includes(norm(p.make));
   }
 
+  function normalizeFacebookColor(color){
+    const c=norm(color);
+    if(!c) return '';
+    const rules=[
+      ['black',['black','ebony','onyx']],
+      ['white',['white','pearl white','ivory']],
+      ['blue',['blue','navy','azure']],
+      ['gray',['gray','grey','graphite','charcoal','slate']],
+      ['silver',['silver','platinum','aluminum','aluminium']],
+      ['red',['red','burgundy','maroon','crimson','ruby']],
+      ['green',['green','olive','emerald']],
+      ['brown',['brown','bronze','mocha','chestnut']],
+      ['gold',['gold','champagne','beige','tan']],
+      ['orange',['orange','copper']],
+      ['purple',['purple','violet','plum']],
+      ['pink',['pink','rose']]
+    ];
+    for(const [facebookColor,terms] of rules){
+      if(terms.some(term=>c.includes(term))) return facebookColor[0].toUpperCase()+facebookColor.slice(1);
+    }
+    return '';
+  }
+
   function description(p){
     return [`🚙 ${p.year} ${p.make} ${p.model}`,'',`Price: $${Number(p.price).toLocaleString()}`,p.mileage?`Mileage: ${Number(p.mileage).toLocaleString()}`:'',p.stock?`Stock #: ${p.stock}`:'',`VIN: ${p.vin}`,p.color?`Color: ${p.color}`:'','Financing options available • Trade-ins welcome • First-time buyers welcome','',p.bookingLink?`Schedule a test drive: ${p.bookingLink}`:'',p.applicationLink?`Credit application: ${p.applicationLink}`:''].filter(Boolean).join('\n');
   }
@@ -142,7 +165,7 @@
     if(!validPayload(p))return note('Keys2AutoSales stopped: vehicle is missing VIN, year, make, model, or price.',false);
     p.vin=String(p.vin).toUpperCase().replace(/[^A-Z0-9]/g,'');
     const results={};
-    note(`Keys2AutoSales v0.1.7: loading ${p.year} ${p.make} ${p.model}…`);
+    note(`Keys2AutoSales v0.1.8: loading ${p.year} ${p.make} ${p.model}…`);
 
     const vinInput=await waitFor(()=>exactInput(['VIN']),7000);
     if(vinInput&&vinInput.value){clearValue(vinInput);await sleep(900);} results.vinSkipped=true;
@@ -169,15 +192,24 @@
     await sleep(500);
 
     if(p.color){
-      results.color=await chooseExact('Exterior color',p.color);
-      await sleep(400);
+      const facebookColor=normalizeFacebookColor(p.color);
+      results.colorSource=p.color;
+      results.colorNormalized=facebookColor;
+      if(facebookColor){
+        note(`Selecting exterior color: ${p.color} → ${facebookColor}`);
+        results.color=await chooseExact('Exterior color',facebookColor);
+        await sleep(400);
+      }else{
+        results.color=false;
+        note(`Exterior color needs review: ${p.color} did not map to a Facebook color.`,false);
+      }
     }
 
     const descriptionInput=await waitFor(()=>exactInput(['Description'])||document.querySelector('textarea'),5000);
     results.description=setValue(descriptionInput,p.description||description(p),{clearFirst:true});
 
     chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
-    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. Mileage, price and description filled. Review photos/details, then publish manually.`,true);
+    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. Mileage, price, exterior color and description filled. Review photos/details, then publish manually.`,true);
   }
 
   const payload=decodePayload();
