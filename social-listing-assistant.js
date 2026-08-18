@@ -32,7 +32,7 @@
     window.open(`${CREATE_URL}#k2=${encodePayload(payload)}`,'_blank','noopener');
   };
 
-  function injectButtons(){
+  function injectInventoryButtons(){
     document.querySelectorAll('.vehicle-card').forEach(card=>{
       if(card.querySelector('.k2-autofill-btn')) return;
       const actionRow=card.querySelector('.actions');
@@ -48,12 +48,18 @@
     });
   }
 
-  const oldRenderInventory=window.renderInventory;
-  if(typeof oldRenderInventory==='function'){
-    window.renderInventory=function(){oldRenderInventory();setTimeout(injectButtons,0);};
+  function addAssistantCard(){
+    const host=document.getElementById('marketing');
+    if(!host || host.querySelector('.k2-assistant-card')) return;
+    const card=document.createElement('div');
+    card.className='panel compact k2-assistant-card';
+    card.innerHTML='<div class="panel-head"><div><h3>Social Listing Assistant</h3><p class="muted">Chrome extension autofills Facebook Marketplace vehicle listings from Keys2AutoSales.</p></div><span class="badge LIVE">Extension Workflow Ready</span></div>';
+    host.prepend(card);
   }
 
-  // Marketplace mockup rows are rebuilt separately; capture clicks on the primary POST action.
+  function enhance(){injectInventoryButtons();addAssistantCard();}
+
+  // Marketplace mockup rows are rebuilt dynamically. Capture POST clicks and replace the normal Facebook-open action with the autofill handoff.
   document.addEventListener('click',e=>{
     const btn=e.target.closest('.mk-action.primary.POST');
     if(!btn) return;
@@ -62,24 +68,14 @@
     const stock=(row.querySelector('.stock-copy strong')?.textContent || row.querySelector('.vehicle-copy span')?.textContent.replace(/^Stock\s+/,'') || '').trim();
     const v=(state.inventory||[]).find(x=>String(x.stock)===stock);
     if(!v) return;
-    e.preventDefault();e.stopImmediatePropagation();
+    e.preventDefault();
+    e.stopImmediatePropagation();
     window.autoFillMarketplace(v.id);
   },true);
 
-  // Small connection/help card on the Marketplace screen.
-  function addAssistantCard(){
-    const host=document.getElementById('marketing');
-    if(!host || host.querySelector('.k2-assistant-card')) return;
-    const card=document.createElement('div');
-    card.className='panel compact k2-assistant-card';
-    card.innerHTML='<div class="panel-head"><div><h3>Social Listing Assistant</h3><p class="muted">Chrome extension autofills Marketplace vehicle listings from Keys2AutoSales.</p></div><span class="badge LIVE">Extension Workflow Ready</span></div>';
-    host.prepend(card);
-  }
-
-  const oldRenderMarketing=window.renderMarketing;
-  if(typeof oldRenderMarketing==='function'){
-    window.renderMarketing=function(){oldRenderMarketing();setTimeout(addAssistantCard,0);};
-  }
-
-  setTimeout(()=>{injectButtons();addAssistantCard();},500);
+  // Keep enhancements present after any inventory/Marketplace rerender.
+  const observer=new MutationObserver(()=>requestAnimationFrame(enhance));
+  observer.observe(document.documentElement,{childList:true,subtree:true});
+  window.addEventListener('load',enhance);
+  setTimeout(enhance,300);
 })();
