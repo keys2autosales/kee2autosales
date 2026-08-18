@@ -6,169 +6,90 @@
   <meta name="theme-color" content="#111827" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Sales Command" />
-  <title>Car Sales Command Center</title>
+  <meta name="apple-mobile-web-app-title" content="Keys2AutoSales" />
+  <title>Keys2AutoSales Command Center</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <div class="eyebrow">PERSONAL SALES APP</div>
-      <h1>Car Sales Command Center</h1>
+  <aside class="desktop-sidebar">
+    <div class="brand-block">
+      <div class="brand-mark">K2</div>
+      <div><strong>Keys2AutoSales</strong><small>Car Sales Command Center</small></div>
     </div>
-    <button id="quickAddBtn" class="btn gold">+ Quick Add</button>
-  </header>
+    <div class="side-group"><span class="side-label">SALES</span>
+      <button class="side-nav active" data-nav="dashboard">⌂ <span>Home</span></button>
+      <button class="side-nav" data-nav="leads">🔥 <span>Leads</span></button>
+      <button class="side-nav" data-nav="inventory">🚘 <span>Inventory</span></button>
+      <button class="side-nav" data-nav="deals">💰 <span>Deals</span></button>
+      <button class="side-nav" data-nav="tasks">✓ <span>Tasks</span></button>
+    </div>
+    <div class="side-group"><span class="side-label">MARKETING</span>
+      <button class="side-nav" data-nav="marketing">📣 <span>Marketplace</span></button>
+    </div>
+    <div class="side-group"><span class="side-label">BUSINESS</span>
+      <button class="side-nav" data-nav="settings">⚙️ <span>Settings</span></button>
+    </div>
+    <div class="sidebar-goal"><span>Today’s Goal</span><strong>Stay on the queue</strong><small>Work the highest-priority action first.</small></div>
+  </aside>
 
-  <main id="app">
-    <section id="dashboard" class="screen active">
-      <div class="hero">
-        <div>
-          <p class="muted">Today</p>
-          <h2 id="todayLabel"></h2>
-        </div>
-        <div class="hero-actions">
-          <a class="btn dark" target="_blank" href="https://api.leadconnectorhq.com/widget/booking/zGCHd8lq4gxwxJzcKtcP">Booking Link</a>
-          <a class="btn light" target="_blank" href="https://www.brownandbrownauto.com/loan-application">Credit App</a>
-        </div>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">PERSONAL SALES APP</div>
+        <h1>Car Sales Command Center</h1>
       </div>
+      <button id="quickAddBtn" class="btn gold">+ Quick Add</button>
+    </header>
 
-      <div class="kpi-grid" id="kpiGrid"></div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <div>
-            <h3>Today's Priority Queue</h3>
-            <p class="muted">Work top-to-bottom, then get back to calls and closing.</p>
-          </div>
-          <button class="btn small" data-nav="tasks">View all</button>
-        </div>
-        <div id="priorityQueue" class="stack"></div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <div>
-            <h3>Lead Source Performance</h3>
-            <p class="muted">Know what actually produces appointments and sales.</p>
+    <main id="app">
+      <section id="dashboard" class="screen active">
+        <div class="hero">
+          <div><p class="muted">Today</p><h2 id="todayLabel"></h2></div>
+          <div class="hero-actions">
+            <a class="btn dark" target="_blank" href="https://api.leadconnectorhq.com/widget/booking/zGCHd8lq4gxwxJzcKtcP">Booking Link</a>
+            <a class="btn light" target="_blank" href="https://www.brownandbrownauto.com/loan-application">Credit App</a>
           </div>
         </div>
-        <div id="sourcePerformance"></div>
-      </div>
-    </section>
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <div class="panel"><div class="panel-head"><div><h3>Today's Priority Queue</h3><p class="muted">Work top-to-bottom, then get back to calls and closing.</p></div><button class="btn small" data-nav="tasks">View all</button></div><div id="priorityQueue" class="stack"></div></div>
+        <div class="panel"><div class="panel-head"><div><h3>Lead Source Performance</h3><p class="muted">Know what actually produces appointments and sales.</p></div></div><div id="sourcePerformance"></div></div>
+      </section>
 
-    <section id="inventory" class="screen">
-      <div class="screen-head">
-        <div>
-          <h2>Inventory</h2>
-          <p class="muted">One vehicle record controls your advertising actions.</p>
-        </div>
-        <button class="btn gold" id="addVehicleBtn">+ Vehicle</button>
-      </div>
+      <section id="inventory" class="screen">
+        <div class="screen-head"><div><h2>Inventory</h2><p class="muted">One vehicle record controls your advertising actions.</p></div><button class="btn gold" id="addVehicleBtn">+ Vehicle</button></div>
+        <div class="toolbar"><input id="inventorySearch" class="input" placeholder="Search stock #, VIN, vehicle..." /><select id="inventoryFilter" class="input"><option value="all">All inventory</option><option value="Available">Available</option><option value="Sold">Sold</option><option value="action">Needs action</option></select></div>
+        <div class="panel compact"><div class="panel-head"><div><h3>IDMS Import</h3><p class="muted">Import a CSV export and keep the cloud inventory current.</p></div><label class="btn light file-label">Import CSV<input id="csvImport" type="file" accept=".csv" hidden /></label></div></div>
+        <div id="inventoryList" class="card-list"></div>
+      </section>
 
-      <div class="toolbar">
-        <input id="inventorySearch" class="input" placeholder="Search stock #, VIN, vehicle..." />
-        <select id="inventoryFilter" class="input">
-          <option value="all">All inventory</option>
-          <option value="Available">Available</option>
-          <option value="Sold">Sold</option>
-          <option value="action">Needs action</option>
-        </select>
-      </div>
+      <section id="marketing" class="screen">
+        <div class="screen-head"><div><h2>Marketplace Work Queue</h2><p class="muted">Post, renew, update, verify, or remove the right vehicles without hunting through every ad.</p></div></div>
+        <div class="segmented"><button class="seg active" data-marketing-filter="all">All</button><button class="seg" data-marketing-filter="POST">Post</button><button class="seg" data-marketing-filter="RENEW">Renew</button><button class="seg" data-marketing-filter="UPDATE">Update</button><button class="seg" data-marketing-filter="REMOVE">Remove</button></div>
+        <div id="marketingList" class="card-list"></div>
+      </section>
 
-      <div class="panel compact">
-        <div class="panel-head">
-          <div>
-            <h3>IDMS Import</h3>
-            <p class="muted">Prototype CSV import. Match columns by common IDMS names.</p>
-          </div>
-          <label class="btn light file-label">Import CSV<input id="csvImport" type="file" accept=".csv" hidden /></label>
-        </div>
-      </div>
+      <section id="leads" class="screen">
+        <div class="screen-head"><div><h2>Leads</h2><p class="muted">Marketplace/Craigslist leads move into one clean pipeline.</p></div><button class="btn gold" id="addLeadBtn">+ Lead</button></div>
+        <div id="leadPipeline" class="pipeline"></div>
+      </section>
 
-      <div id="inventoryList" class="card-list"></div>
-    </section>
+      <section id="tasks" class="screen">
+        <div class="screen-head"><div><h2>Today's Work</h2><p class="muted">Only the tasks that matter right now.</p></div><button class="btn gold" id="addTaskBtn">+ Task</button></div><div id="taskList" class="card-list"></div>
+      </section>
 
-    <section id="marketing" class="screen">
-      <div class="screen-head">
-        <div>
-          <h2>Marketplace Work Queue</h2>
-          <p class="muted">Post, renew, update, verify, or remove the right vehicles without hunting through every ad.</p>
-        </div>
-      </div>
-      <div class="segmented">
-        <button class="seg active" data-marketing-filter="all">All</button>
-        <button class="seg" data-marketing-filter="POST">Post</button>
-        <button class="seg" data-marketing-filter="RENEW">Renew</button>
-        <button class="seg" data-marketing-filter="UPDATE">Update</button>
-        <button class="seg" data-marketing-filter="REMOVE">Remove</button>
-      </div>
-      <div id="marketingList" class="card-list"></div>
-    </section>
+      <section id="deals" class="screen">
+        <div class="screen-head"><div><h2>Deals & Income</h2><p class="muted">Track gross, full/half deal, and your estimated commission.</p></div><button class="btn gold" id="addDealBtn">+ Deal</button></div><div id="dealSummary" class="kpi-grid"></div><div id="dealList" class="card-list"></div>
+      </section>
 
-    <section id="leads" class="screen">
-      <div class="screen-head">
-        <div>
-          <h2>Leads</h2>
-          <p class="muted">Marketplace/Craigslist leads move into one clean pipeline.</p>
-        </div>
-        <button class="btn gold" id="addLeadBtn">+ Lead</button>
-      </div>
-      <div id="leadPipeline" class="pipeline"></div>
-    </section>
-
-    <section id="tasks" class="screen">
-      <div class="screen-head">
-        <div>
-          <h2>Today's Work</h2>
-          <p class="muted">Only the tasks that matter right now.</p>
-        </div>
-        <button class="btn gold" id="addTaskBtn">+ Task</button>
-      </div>
-      <div id="taskList" class="card-list"></div>
-    </section>
-
-    <section id="deals" class="screen">
-      <div class="screen-head">
-        <div>
-          <h2>Deals & Income</h2>
-          <p class="muted">Track gross, full/half deal, and your estimated commission.</p>
-        </div>
-        <button class="btn gold" id="addDealBtn">+ Deal</button>
-      </div>
-      <div id="dealSummary" class="kpi-grid"></div>
-      <div id="dealList" class="card-list"></div>
-    </section>
-
-    <section id="settings" class="screen">
-      <div class="screen-head">
-        <div>
-          <h2>Settings</h2>
-          <p class="muted">Personal defaults for your workflow.</p>
-        </div>
-      </div>
-      <div class="panel form-panel">
-        <label>Commission Rate<input id="commissionRate" class="input" type="number" step="0.01" min="0" max="1"></label>
-        <label>Half Deal Multiplier<input id="halfDealMultiplier" class="input" type="number" step="0.01" min="0" max="1"></label>
-        <label>Renewal Trigger (days)<input id="renewalDays" class="input" type="number" min="1"></label>
-        <label>Dealership Address<input id="dealerAddress" class="input"></label>
-        <label>GHL Booking Link<input id="bookingLink" class="input"></label>
-        <label>Credit Application Link<input id="applicationLink" class="input"></label>
-        <button class="btn gold" id="saveSettingsBtn">Save Settings</button>
-      </div>
-
-      <div class="panel">
-        <h3>Quick Replies</h3>
-        <div id="quickReplyList" class="stack"></div>
-      </div>
-
-      <div class="panel danger-zone">
-        <h3>Prototype Data</h3>
-        <p class="muted">Reset this local demo back to sample data.</p>
-        <button class="btn danger" id="resetDataBtn">Reset Demo Data</button>
-      </div>
-    </section>
-  </main>
+      <section id="settings" class="screen">
+        <div class="screen-head"><div><h2>Settings</h2><p class="muted">Personal defaults for your workflow.</p></div></div>
+        <div class="panel form-panel"><label>Commission Rate<input id="commissionRate" class="input" type="number" step="0.01" min="0" max="1"></label><label>Half Deal Multiplier<input id="halfDealMultiplier" class="input" type="number" step="0.01" min="0" max="1"></label><label>Renewal Trigger (days)<input id="renewalDays" class="input" type="number" min="1"></label><label>Dealership Address<input id="dealerAddress" class="input"></label><label>GHL Booking Link<input id="bookingLink" class="input"></label><label>Credit Application Link<input id="applicationLink" class="input"></label><button class="btn gold" id="saveSettingsBtn">Save Settings</button></div>
+        <div class="panel"><h3>Quick Replies</h3><div id="quickReplyList" class="stack"></div></div>
+        <div class="panel danger-zone"><h3>Prototype Data</h3><p class="muted">Reset local fallback data.</p><button class="btn danger" id="resetDataBtn">Reset Demo Data</button></div>
+      </section>
+    </main>
+  </div>
 
   <nav class="bottom-nav">
     <button class="nav-item active" data-nav="dashboard"><span>⌂</span><small>Home</small></button>
@@ -179,20 +100,7 @@
     <button class="nav-item" data-nav="settings"><span>⚙️</span><small>More</small></button>
   </nav>
 
-  <dialog id="modal">
-    <form method="dialog" id="modalForm">
-      <div class="modal-head">
-        <h3 id="modalTitle">Add</h3>
-        <button type="button" class="icon-btn" id="closeModalBtn">✕</button>
-      </div>
-      <div id="modalBody"></div>
-      <div class="modal-actions">
-        <button type="button" class="btn light" id="cancelModalBtn">Cancel</button>
-        <button type="submit" class="btn gold">Save</button>
-      </div>
-    </form>
-  </dialog>
-
+  <dialog id="modal"><form method="dialog" id="modalForm"><div class="modal-head"><h3 id="modalTitle">Add</h3><button type="button" class="icon-btn" id="closeModalBtn">✕</button></div><div id="modalBody"></div><div class="modal-actions"><button type="button" class="btn light" id="cancelModalBtn">Cancel</button><button type="submit" class="btn gold">Save</button></div></form></dialog>
   <script src="app.js"></script>
   <script src="marketplace-cloud.js"></script>
 </body>
