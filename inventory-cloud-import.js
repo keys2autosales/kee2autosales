@@ -31,25 +31,33 @@
     return 'Available';
   }
 
+  function stockValue(row){
+    return val(row,['stock_number','Stock #','Stock','Stock Number','Stock No','Stock No.','StockNumber']);
+  }
+
+  function vinValue(row){
+    return val(row,['vin','VIN','Vin','Vehicle Identification Number']);
+  }
+
   function rowToVehicle(row,existing){
-    const stock=val(row,['Stock #','Stock','Stock Number','Stock No','Stock No.','StockNumber']);
-    const vin=val(row,['VIN','Vin','Vehicle Identification Number']);
-    const model=val(row,['Model / Trim','Model/Trim','Model'])||'';
-    const trim=val(row,['Trim','Series'])||'';
+    const stock=stockValue(row);
+    const vin=vinValue(row);
+    const model=val(row,['model_trim','Model / Trim','Model/Trim','Model'])||'';
+    const trim=val(row,['trim','Trim','Series'])||'';
     const modelTrim=trim && !String(model).toLowerCase().includes(String(trim).toLowerCase()) ? `${model} ${trim}`.trim() : model;
-    const rawStatus=val(row,['Status','Inventory Status','Vehicle Status','Lot Status']);
+    const rawStatus=val(row,['status','Status','Inventory Status','Vehicle Status','Lot Status']);
 
     return {
       ...(existing||{}),
       stock:String(stock||'').trim(),
-      vin:String(vin||'').trim(),
-      year:num(val(row,['Year','Model Year'])),
-      make:String(val(row,['Make','Manufacturer'])||'').trim(),
+      vin:String(vin||'').trim().toUpperCase(),
+      year:num(val(row,['year','Year','Model Year'])),
+      make:String(val(row,['make','Make','Manufacturer'])||'').trim(),
       model:String(modelTrim||'').trim(),
-      color:String(val(row,['Color','Exterior Color','Ext Color'])||existing?.color||'').trim(),
-      mileage:num(val(row,['Mileage','Miles','Odometer','Odometer Miles'])),
-      price:num(val(row,['Price','Retail Price','Internet Price','Sale Price','List Price','Selling Price'])),
-      photos:num(val(row,['Pics','Photos','Photo Count','Images','Image Count'])) || Number(existing?.photos||0),
+      color:String(val(row,['exterior_color','color','Color','Exterior Color','Ext Color'])||existing?.color||'').trim(),
+      mileage:num(val(row,['mileage','Mileage','Miles','Odometer','Odometer Miles'])),
+      price:num(val(row,['dealer_price','price','Price','Retail Price','Internet Price','Sale Price','List Price','Selling Price'])),
+      photos:num(val(row,['photo_count','pics','Pics','Photos','Photo Count','Images','Image Count'])) || Number(existing?.photos||0),
       status:normalizeStatus(rawStatus||existing?.status),
       fbPosted:Boolean(existing?.fbPosted),
       fbListingUrl:existing?.fbListingUrl||'',
@@ -78,20 +86,20 @@
       }
 
       let created=0,updated=0,skipped=0,failed=0;
-      const touched=[];
 
       for(const row of rows){
-        const stock=String(val(row,['Stock #','Stock','Stock Number','Stock No','Stock No.','StockNumber'])||'').trim();
-        const vin=String(val(row,['VIN','Vin','Vehicle Identification Number'])||'').trim();
+        const stock=String(stockValue(row)||'').trim();
+        const vin=String(vinValue(row)||'').trim().toUpperCase();
         if(!stock&&!vin){skipped++;continue;}
 
-        const existing=state.inventory.find(v=>(stock&&String(v.stock)===stock)||(vin&&String(v.vin).toUpperCase()===vin.toUpperCase()));
+        // VIN is the preferred match key. Stock number is the fallback.
+        // This lets a corrected import repair previously mis-mapped stock numbers
+        // without creating duplicate vehicle records.
+        const existing=state.inventory.find(v=>(vin&&String(v.vin||'').toUpperCase()===vin)||(stock&&String(v.stock||'')===stock));
         const vehicle=rowToVehicle(row,existing);
         try{
-          let saved;
-          if(existing){ saved=await updateCloudVehicle(vehicle); updated++; }
-          else { saved=await createCloudVehicle(vehicle); created++; }
-          touched.push(saved);
+          if(existing){ await updateCloudVehicle(vehicle); updated++; }
+          else { await createCloudVehicle(vehicle); created++; }
         }catch(err){
           failed++;
           console.error('Vehicle import failed',stock||vin,err);
