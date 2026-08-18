@@ -1,33 +1,52 @@
 // Keys2AutoSales -> Facebook Marketplace Social Listing Assistant handoff
 (function(){
   const CREATE_URL='https://www.facebook.com/marketplace/create/vehicle';
+  const VIN_RE=/^[A-HJ-NPR-Z0-9]{17}$/;
 
   function encodePayload(obj){
     const json=JSON.stringify(obj);
     return btoa(unescape(encodeURIComponent(json))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   }
 
+  function cleanVin(value){
+    return String(value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  }
+
+  function cleanModel(value){
+    const raw=String(value||'').trim();
+    return typeof window.cleanVehicleModel==='function' ? window.cleanVehicleModel(raw) : raw;
+  }
+
   function vehiclePayload(v){
+    const vin=cleanVin(v.vin);
     return {
-      id:v.id,
+      schema:'k2-marketplace-v2',
+      id:String(v.id||''),
+      vin,
+      stock:String(v.stock||'').trim(),
       year:Number(v.year||0)||'',
-      make:v.make||'',
-      model:v.model||'',
+      make:String(v.make||'').trim(),
+      model:cleanModel(v.model),
       mileage:Number(v.mileage||0)||'',
       price:Number(v.price||0)||'',
-      stock:v.stock||'',
-      vin:v.vin||'',
-      color:v.color||'',
+      color:String(v.color||'').trim(),
+      vehicleType:'Car/Truck',
       bookingLink:state.settings?.bookingLink||'',
       applicationLink:state.settings?.applicationLink||''
     };
   }
 
   window.autoFillMarketplace=function(id){
-    const v=(state.inventory||[]).find(x=>x.id===id);
+    const v=(state.inventory||[]).find(x=>String(x.id)===String(id));
     if(!v) return alert('Vehicle not found.');
     if(!Number(v.price||0)) return alert('Add a dealer price before sending this vehicle to Marketplace.');
     const payload=vehiclePayload(v);
+    if(!VIN_RE.test(payload.vin)){
+      return alert(`This vehicle does not have a valid 17-character VIN. Current VIN: ${payload.vin||'missing'}`);
+    }
+    if(!payload.year||!payload.make||!payload.model){
+      return alert('Year, make, and model are required before sending this vehicle to Marketplace.');
+    }
     localStorage.setItem('k2_marketplace_last_payload',JSON.stringify(payload));
     window.open(`${CREATE_URL}#k2=${encodePayload(payload)}`,'_blank','noopener');
   };
@@ -59,7 +78,6 @@
 
   function enhance(){injectInventoryButtons();addAssistantCard();}
 
-  // Marketplace mockup rows are rebuilt dynamically. Capture POST clicks and replace the normal Facebook-open action with the autofill handoff.
   document.addEventListener('click',e=>{
     const btn=e.target.closest('.mk-action.primary.POST');
     if(!btn) return;
@@ -73,7 +91,6 @@
     window.autoFillMarketplace(v.id);
   },true);
 
-  // Keep enhancements present after any inventory/Marketplace rerender.
   const observer=new MutationObserver(()=>requestAnimationFrame(enhance));
   observer.observe(document.documentElement,{childList:true,subtree:true});
   window.addEventListener('load',enhance);
