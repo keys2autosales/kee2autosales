@@ -27,17 +27,21 @@
   function fire(el){
     el.dispatchEvent(new Event('input',{bubbles:true}));
     el.dispatchEvent(new Event('change',{bubbles:true}));
-    el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Tab'}));
   }
 
   function setValue(el,value,{clearFirst=false}={}){
     if(!el || value===undefined || value===null || value==='') return false;
     el.focus();
-    if(clearFirst){ nativeSet(el,''); fire(el); }
+    if(clearFirst){nativeSet(el,'');fire(el);}
     nativeSet(el,String(value));
     fire(el);
     el.blur();
     return true;
+  }
+
+  function clearValue(el){
+    if(!el) return false;
+    el.focus();nativeSet(el,'');fire(el);el.blur();return true;
   }
 
   function exactInput(names){
@@ -68,9 +72,9 @@
     }
     for(const t of triggers){
       let p=t;
-      for(let i=0;i<4&&p;i++,p=p.parentElement){
+      for(let i=0;i<5&&p;i++,p=p.parentElement){
         const text=norm(p.textContent);
-        if(text && text.length<140 && (text===wanted || text.startsWith(wanted+' '))) return t;
+        if(text && text.length<160 && (text===wanted || text.startsWith(wanted+' '))) return t;
       }
     }
     return null;
@@ -84,26 +88,27 @@
     return `${aria} ${text}`.trim();
   }
 
+  async function waitFor(fn,timeout=9000){
+    const start=Date.now();
+    while(Date.now()-start<timeout){const result=fn();if(result)return result;await sleep(250);}return null;
+  }
+
   async function chooseExact(label,value){
     if(value===undefined || value===null || value==='') return false;
-    const trigger=await waitFor(()=>selectTrigger(label),5000);
+    const trigger=await waitFor(()=>selectTrigger(label),6000);
     if(!trigger) return false;
+    trigger.scrollIntoView({block:'center'});
     trigger.click();
-    await sleep(550);
+    await sleep(700);
     const wanted=norm(value);
     const opts=[...document.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"]')];
     const target=opts.find(o=>norm(o.textContent)===wanted)
-      ||opts.find(o=>norm(o.textContent).replace(/\s+/g,' ')===wanted)
-      ||opts.find(o=>norm(o.textContent).startsWith(wanted+' '));
-    if(!target){ document.body.click(); return false; }
+      ||opts.find(o=>norm(o.textContent).startsWith(wanted+' '))
+      ||opts.find(o=>norm(o.textContent).includes(wanted));
+    if(!target){document.body.click();return false;}
     target.click();
-    await sleep(650);
+    await sleep(800);
     return norm(selectedText(label)).includes(wanted);
-  }
-
-  async function waitFor(fn,timeout=8000){
-    const start=Date.now();
-    while(Date.now()-start<timeout){const result=fn();if(result)return result;await sleep(250);}return null;
   }
 
   function description(p){
@@ -123,8 +128,8 @@
   function note(text,ok=true){
     document.querySelector('.k2-fill-note')?.remove();
     const n=document.createElement('div');n.className='k2-fill-note';n.textContent=text;
-    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'440px'});
-    document.body.appendChild(n);setTimeout(()=>n.remove(),11000);
+    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'460px'});
+    document.body.appendChild(n);setTimeout(()=>n.remove(),12000);
   }
 
   async function autofill(p){
@@ -132,50 +137,47 @@
     p.vin=String(p.vin).toUpperCase().replace(/[^A-Z0-9]/g,'');
     const results={};
 
-    note(`Keys2AutoSales v0.1.3: resetting listing for ${p.year} ${p.make} ${p.model}…`);
+    note(`Keys2AutoSales v0.1.4: loading ${p.year} ${p.make} ${p.model} without Facebook VIN decoding…`);
 
+    // Facebook VIN decoding has produced stale/wrong identities in testing.
+    // The VIN field is optional, so keep it blank and put the real VIN in the description instead.
     const vinInput=await waitFor(()=>exactInput(['VIN']),7000);
-    if(!vinInput) return note('Could not find Facebook VIN field.',false);
+    if(vinInput && vinInput.value){clearValue(vinInput);await sleep(1200);}
+    results.vinSkipped=true;
 
-    // Clear any stale listing identity, then submit the real VIN.
-    results.vin=setValue(vinInput,p.vin,{clearFirst:true});
-    await sleep(2200);
-
-    // Vehicle type first, then explicitly force the identity from Keys2AutoSales.
     results.vehicleType=await chooseExact('Vehicle type',p.vehicleType||'Car/Truck');
-    await sleep(650);
+    await sleep(700);
     results.year=await chooseExact('Year',String(p.year));
-    await sleep(650);
+    await sleep(700);
     results.make=await chooseExact('Make',p.make);
-    await sleep(650);
+    await sleep(700);
     results.model=await chooseExact('Model',p.model);
-    await sleep(650);
+    await sleep(700);
 
-    // Verify identity before filling anything else.
     const checks={
       year:norm(selectedText('Year')).includes(norm(String(p.year))),
       make:norm(selectedText('Make')).includes(norm(p.make)),
       model:norm(selectedText('Model')).includes(norm(p.model)),
-      vin:String(exactInput(['VIN'])?.value||'').toUpperCase()===p.vin
+      vinBlank:!String(exactInput(['VIN'])?.value||'').trim()
     };
-    if(!checks.vin || !checks.year || !checks.make || !checks.model){
+
+    if(!checks.year || !checks.make || !checks.model || !checks.vinBlank){
       chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
-      return note(`STOP: Facebook identity did not match Keys2AutoSales. VIN ${checks.vin?'✓':'✗'} Year ${checks.year?'✓':'✗'} Make ${checks.make?'✓':'✗'} Model ${checks.model?'✓':'✗'}. Do not publish.`,false);
+      return note(`STOP: identity check failed. VIN blank ${checks.vinBlank?'✓':'✗'} Year ${checks.year?'✓':'✗'} Make ${checks.make?'✓':'✗'} Model ${checks.model?'✓':'✗'}. Do not publish.`,false);
     }
 
-    // Supporting fields only after identity passes.
     results.mileage=setValue(exactInput(['Mileage','Odometer']),p.mileage,{clearFirst:true});
     results.price=setValue(exactInput(['Price']),p.price,{clearFirst:true});
     if(p.color) results.color=await chooseExact('Exterior color',p.color);
     results.description=setValue(exactInput(['Description']),p.description||description(p),{clearFirst:true});
 
     chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
-    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. VIN, Year, Make and Model all match. Review photos/details, then publish manually.`,true);
+    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. VIN decoder bypassed; real VIN is in the description. Review photos/details, then publish manually.`,true);
   }
 
   const payload=decodePayload();
   if(payload){
     chrome.storage.local.set({lastPayload:payload});
-    waitFor(()=>exactInput(['VIN']),10000).then(()=>autofill(payload));
+    waitFor(()=>selectTrigger('Vehicle type')||exactInput(['VIN']),10000).then(()=>autofill(payload));
   }
 })();
