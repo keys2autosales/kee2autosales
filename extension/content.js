@@ -15,7 +15,7 @@
 
   function validPayload(p){
     const vin=String(p?.vin||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-    return p && VIN_RE.test(vin) && p.year && p.make && p.model && Number(p.price)>0;
+    return p && VIN_RE.test(vin) && Number(p.price)>0;
   }
 
   function setValue(el,value){
@@ -88,10 +88,10 @@
 
   function description(p){
     return [
-      `🚙 ${p.year} ${p.make} ${p.model}`,
+      `🚙 ${p.year||''} ${p.make||''} ${p.model||''}`.trim(),
       '',`Price: $${Number(p.price).toLocaleString()}`,
-      `Mileage: ${Number(p.mileage||0).toLocaleString()}`,
-      `Stock #: ${p.stock||'—'}`,
+      p.mileage?`Mileage: ${Number(p.mileage).toLocaleString()}`:'',
+      p.stock?`Stock #: ${p.stock}`:'',
       `VIN: ${p.vin}`,
       p.color?`Color: ${p.color}`:'',
       '', 'Financing options available • Trade-ins welcome • First-time buyers welcome',
@@ -103,39 +103,61 @@
   function note(text,ok=true){
     document.querySelector('.k2-fill-note')?.remove();
     const n=document.createElement('div');n.className='k2-fill-note';n.textContent=text;
-    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'380px'});
-    document.body.appendChild(n);setTimeout(()=>n.remove(),9000);
+    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'420px'});
+    document.body.appendChild(n);setTimeout(()=>n.remove(),10000);
+  }
+
+  function triggerText(label){
+    const t=selectTrigger(label);
+    return t?String(t.textContent||'').trim():'';
   }
 
   async function autofill(p){
-    if(!validPayload(p)) return note('Keys2AutoSales stopped: the vehicle payload is incomplete or has an invalid VIN.',false);
+    if(!validPayload(p)) return note('Keys2AutoSales stopped: this vehicle is missing a valid VIN or dealer price.',false);
     p.vin=String(p.vin).toUpperCase().replace(/[^A-Z0-9]/g,'');
-    note(`Keys2AutoSales: loading ${p.year} ${p.make} ${p.model}…`);
+    note(`Keys2AutoSales: sending VIN ${p.vin} to Facebook…`);
     const results={};
 
     const vinInput=await waitFor(()=>exactInput(['VIN']),7000);
     results.vin=setValue(vinInput,p.vin);
     if(!results.vin) return note('Keys2AutoSales could not find Facebook’s VIN field.',false);
-    await sleep(1800);
 
-    results.vehicleType=await choose('Vehicle type',p.vehicleType||'Car/Truck');
-    await sleep(1400);
+    // VIN is the source of truth. Give Facebook time to decode the vehicle before touching anything else.
+    await sleep(2600);
 
-    // Facebook renders Year/Make/Model as dropdowns. Never treat them as generic text inputs.
-    results.year=await choose('Year',String(p.year));
-    await sleep(350);
-    results.make=await choose('Make',p.make);
-    await sleep(350);
-    results.model=await choose('Model',p.model);
+    // Only set Vehicle Type if Facebook has not already selected one.
+    const vehicleTypeText=triggerText('Vehicle type');
+    if(!vehicleTypeText || /^vehicle type$/i.test(vehicleTypeText)){
+      results.vehicleType=await choose('Vehicle type',p.vehicleType||'Car/Truck');
+      await sleep(1400);
+    }else{
+      results.vehicleType=true;
+    }
 
-    // Only exact labeled text inputs may receive free-form values.
+    // IMPORTANT: Never overwrite Year / Make / Model. Facebook owns those fields after VIN decode.
+    // We only fill fields that are not reliably decoded from VIN.
     results.mileage=setValue(exactInput(['Mileage','Odometer']),p.mileage);
     results.price=setValue(exactInput(['Price']),p.price);
+
+    if(p.color){
+      const colorText=triggerText('Exterior color');
+      if(!colorText || /^exterior color$/i.test(colorText)) results.color=await choose('Exterior color',p.color);
+    }
+
     results.description=setValue(exactInput(['Description']),p.description||description(p));
 
-    chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results});
+    const decoded={year:triggerText('Year'),make:triggerText('Make'),model:triggerText('Model')};
+    chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastDecodedVehicle:decoded});
+
+    const expected=`${p.year||''} ${p.make||''} ${p.model||''}`.trim();
+    const actual=`${decoded.year||''} ${decoded.make||''} ${decoded.model||''}`.trim();
+    if(actual && expected && !norm(actual).includes(norm(p.make))){
+      note(`VIN was entered, but Facebook decoded a different vehicle (${actual}). Do not publish; verify the VIN/source record.`,false);
+      return;
+    }
+
     const count=Object.values(results).filter(Boolean).length;
-    note(`Keys2AutoSales filled ${count} fields. Review every value, add photos, then publish manually.`,count>=2);
+    note(`Keys2AutoSales filled ${count} non-VIN fields. Facebook controls Year/Make/Model from the VIN. Review and publish manually.`,true);
   }
 
   const payload=decodePayload();
