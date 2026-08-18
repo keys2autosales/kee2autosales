@@ -15,17 +15,27 @@
 
   function validPayload(p){
     const vin=String(p?.vin||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-    return p && VIN_RE.test(vin) && Number(p.price)>0;
+    return p && VIN_RE.test(vin) && p.year && p.make && p.model && Number(p.price)>0;
   }
 
-  function setValue(el,value){
-    if(!el || value===undefined || value===null || value==='') return false;
-    el.focus();
+  function nativeSet(el,value){
     const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
     const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
     setter?setter.call(el,String(value)):(el.value=String(value));
+  }
+
+  function fire(el){
     el.dispatchEvent(new Event('input',{bubbles:true}));
     el.dispatchEvent(new Event('change',{bubbles:true}));
+    el.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,key:'Tab'}));
+  }
+
+  function setValue(el,value,{clearFirst=false}={}){
+    if(!el || value===undefined || value===null || value==='') return false;
+    el.focus();
+    if(clearFirst){ nativeSet(el,''); fire(el); }
+    nativeSet(el,String(value));
+    fire(el);
     el.blur();
     return true;
   }
@@ -58,27 +68,37 @@
     }
     for(const t of triggers){
       let p=t;
-      for(let i=0;i<3&&p;i++,p=p.parentElement){
+      for(let i=0;i<4&&p;i++,p=p.parentElement){
         const text=norm(p.textContent);
-        if(text && text.length<120 && (text===wanted || text.startsWith(wanted+' '))) return t;
+        if(text && text.length<140 && (text===wanted || text.startsWith(wanted+' '))) return t;
       }
     }
     return null;
   }
 
-  async function choose(label,value){
-    if(!value) return false;
-    const trigger=selectTrigger(label);
+  function selectedText(label){
+    const t=selectTrigger(label);
+    if(!t) return '';
+    const aria=String(t.getAttribute('aria-valuetext')||t.getAttribute('aria-label')||'').trim();
+    const text=String(t.textContent||'').trim();
+    return `${aria} ${text}`.trim();
+  }
+
+  async function chooseExact(label,value){
+    if(value===undefined || value===null || value==='') return false;
+    const trigger=await waitFor(()=>selectTrigger(label),5000);
     if(!trigger) return false;
     trigger.click();
-    await sleep(650);
+    await sleep(550);
+    const wanted=norm(value);
     const opts=[...document.querySelectorAll('[role="option"],[role="menuitem"],[role="menuitemradio"]')];
-    const v=norm(value);
-    const target=opts.find(o=>norm(o.textContent)===v)||opts.find(o=>norm(o.textContent).startsWith(v));
-    if(!target){document.body.click();return false;}
+    const target=opts.find(o=>norm(o.textContent)===wanted)
+      ||opts.find(o=>norm(o.textContent).replace(/\s+/g,' ')===wanted)
+      ||opts.find(o=>norm(o.textContent).startsWith(wanted+' '));
+    if(!target){ document.body.click(); return false; }
     target.click();
-    await sleep(450);
-    return true;
+    await sleep(650);
+    return norm(selectedText(label)).includes(wanted);
   }
 
   async function waitFor(fn,timeout=8000){
@@ -88,7 +108,7 @@
 
   function description(p){
     return [
-      `🚙 ${p.year||''} ${p.make||''} ${p.model||''}`.trim(),
+      `🚙 ${p.year} ${p.make} ${p.model}`,
       '',`Price: $${Number(p.price).toLocaleString()}`,
       p.mileage?`Mileage: ${Number(p.mileage).toLocaleString()}`:'',
       p.stock?`Stock #: ${p.stock}`:'',
@@ -103,61 +123,54 @@
   function note(text,ok=true){
     document.querySelector('.k2-fill-note')?.remove();
     const n=document.createElement('div');n.className='k2-fill-note';n.textContent=text;
-    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'420px'});
-    document.body.appendChild(n);setTimeout(()=>n.remove(),10000);
-  }
-
-  function triggerText(label){
-    const t=selectTrigger(label);
-    return t?String(t.textContent||'').trim():'';
+    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'440px'});
+    document.body.appendChild(n);setTimeout(()=>n.remove(),11000);
   }
 
   async function autofill(p){
-    if(!validPayload(p)) return note('Keys2AutoSales stopped: this vehicle is missing a valid VIN or dealer price.',false);
+    if(!validPayload(p)) return note('Keys2AutoSales stopped: vehicle is missing VIN, year, make, model, or price.',false);
     p.vin=String(p.vin).toUpperCase().replace(/[^A-Z0-9]/g,'');
-    note(`Keys2AutoSales: sending VIN ${p.vin} to Facebook…`);
     const results={};
 
+    note(`Keys2AutoSales v0.1.3: resetting listing for ${p.year} ${p.make} ${p.model}…`);
+
     const vinInput=await waitFor(()=>exactInput(['VIN']),7000);
-    results.vin=setValue(vinInput,p.vin);
-    if(!results.vin) return note('Keys2AutoSales could not find Facebook’s VIN field.',false);
+    if(!vinInput) return note('Could not find Facebook VIN field.',false);
 
-    // VIN is the source of truth. Give Facebook time to decode the vehicle before touching anything else.
-    await sleep(2600);
+    // Clear any stale listing identity, then submit the real VIN.
+    results.vin=setValue(vinInput,p.vin,{clearFirst:true});
+    await sleep(2200);
 
-    // Only set Vehicle Type if Facebook has not already selected one.
-    const vehicleTypeText=triggerText('Vehicle type');
-    if(!vehicleTypeText || /^vehicle type$/i.test(vehicleTypeText)){
-      results.vehicleType=await choose('Vehicle type',p.vehicleType||'Car/Truck');
-      await sleep(1400);
-    }else{
-      results.vehicleType=true;
+    // Vehicle type first, then explicitly force the identity from Keys2AutoSales.
+    results.vehicleType=await chooseExact('Vehicle type',p.vehicleType||'Car/Truck');
+    await sleep(650);
+    results.year=await chooseExact('Year',String(p.year));
+    await sleep(650);
+    results.make=await chooseExact('Make',p.make);
+    await sleep(650);
+    results.model=await chooseExact('Model',p.model);
+    await sleep(650);
+
+    // Verify identity before filling anything else.
+    const checks={
+      year:norm(selectedText('Year')).includes(norm(String(p.year))),
+      make:norm(selectedText('Make')).includes(norm(p.make)),
+      model:norm(selectedText('Model')).includes(norm(p.model)),
+      vin:String(exactInput(['VIN'])?.value||'').toUpperCase()===p.vin
+    };
+    if(!checks.vin || !checks.year || !checks.make || !checks.model){
+      chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
+      return note(`STOP: Facebook identity did not match Keys2AutoSales. VIN ${checks.vin?'✓':'✗'} Year ${checks.year?'✓':'✗'} Make ${checks.make?'✓':'✗'} Model ${checks.model?'✓':'✗'}. Do not publish.`,false);
     }
 
-    // IMPORTANT: Never overwrite Year / Make / Model. Facebook owns those fields after VIN decode.
-    // We only fill fields that are not reliably decoded from VIN.
-    results.mileage=setValue(exactInput(['Mileage','Odometer']),p.mileage);
-    results.price=setValue(exactInput(['Price']),p.price);
+    // Supporting fields only after identity passes.
+    results.mileage=setValue(exactInput(['Mileage','Odometer']),p.mileage,{clearFirst:true});
+    results.price=setValue(exactInput(['Price']),p.price,{clearFirst:true});
+    if(p.color) results.color=await chooseExact('Exterior color',p.color);
+    results.description=setValue(exactInput(['Description']),p.description||description(p),{clearFirst:true});
 
-    if(p.color){
-      const colorText=triggerText('Exterior color');
-      if(!colorText || /^exterior color$/i.test(colorText)) results.color=await choose('Exterior color',p.color);
-    }
-
-    results.description=setValue(exactInput(['Description']),p.description||description(p));
-
-    const decoded={year:triggerText('Year'),make:triggerText('Make'),model:triggerText('Model')};
-    chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastDecodedVehicle:decoded});
-
-    const expected=`${p.year||''} ${p.make||''} ${p.model||''}`.trim();
-    const actual=`${decoded.year||''} ${decoded.make||''} ${decoded.model||''}`.trim();
-    if(actual && expected && !norm(actual).includes(norm(p.make))){
-      note(`VIN was entered, but Facebook decoded a different vehicle (${actual}). Do not publish; verify the VIN/source record.`,false);
-      return;
-    }
-
-    const count=Object.values(results).filter(Boolean).length;
-    note(`Keys2AutoSales filled ${count} non-VIN fields. Facebook controls Year/Make/Model from the VIN. Review and publish manually.`,true);
+    chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
+    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. VIN, Year, Make and Model all match. Review photos/details, then publish manually.`,true);
   }
 
   const payload=decodePayload();
