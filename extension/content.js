@@ -26,7 +26,13 @@
   function fire(el){el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}
   function setValue(el,value,{clearFirst=false}={}){
     if(!el || value===undefined || value===null || value==='') return false;
-    el.focus(); if(clearFirst){nativeSet(el,'');fire(el);} nativeSet(el,String(value)); fire(el); return true;
+    el.scrollIntoView?.({block:'center'});
+    el.focus();
+    if(clearFirst){nativeSet(el,'');fire(el);}
+    nativeSet(el,String(value));
+    fire(el);
+    el.blur();
+    return true;
   }
   function clearValue(el){if(!el)return false;el.focus();nativeSet(el,'');fire(el);el.blur();return true;}
 
@@ -110,7 +116,15 @@
 
   function previewMatches(p){
     const wanted=norm(`${p.year} ${p.make} ${p.model}`);
-    return [...document.querySelectorAll('div,span,h1,h2,h3')].some(el=>el.offsetParent!==null && norm(el.textContent)===wanted);
+    const bodyText=norm(document.body?.innerText||'');
+    if(bodyText.includes(wanted)) return true;
+    return [...document.querySelectorAll('div,span,h1,h2,h3')].some(el=>el.offsetParent!==null && norm(el.textContent).includes(wanted));
+  }
+
+  function directIdentityMatches(p){
+    const model=norm(String(fieldInput('Model')?.value||''));
+    const page=norm(document.body?.innerText||'');
+    return model.includes(norm(p.model)) && page.includes(norm(String(p.year))) && page.includes(norm(p.make));
   }
 
   function description(p){
@@ -128,7 +142,7 @@
     if(!validPayload(p))return note('Keys2AutoSales stopped: vehicle is missing VIN, year, make, model, or price.',false);
     p.vin=String(p.vin).toUpperCase().replace(/[^A-Z0-9]/g,'');
     const results={};
-    note(`Keys2AutoSales v0.1.6: loading ${p.year} ${p.make} ${p.model}…`);
+    note(`Keys2AutoSales v0.1.7: loading ${p.year} ${p.make} ${p.model}…`);
 
     const vinInput=await waitFor(()=>exactInput(['VIN']),7000);
     if(vinInput&&vinInput.value){clearValue(vinInput);await sleep(900);} results.vinSkipped=true;
@@ -136,21 +150,34 @@
     results.vehicleType=await chooseExact('Vehicle type',p.vehicleType||'Car/Truck'); await sleep(650);
     results.year=await chooseExact('Year',String(p.year)); await sleep(650);
     results.make=await chooseExact('Make',p.make); await sleep(850);
-    results.model=await chooseModel(p.model); await sleep(1000);
+    results.model=await chooseModel(p.model); await sleep(700);
 
-    const checks={preview:previewMatches(p),vinBlank:!String(exactInput(['VIN'])?.value||'').trim()};
-    if(!checks.preview || !checks.vinBlank){
+    const identityOk=await waitFor(()=>previewMatches(p)||directIdentityMatches(p),5000);
+    const checks={identity:Boolean(identityOk),vinBlank:!String(exactInput(['VIN'])?.value||'').trim()};
+    if(!checks.identity || !checks.vinBlank){
       chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
-      return note(`STOP: identity check failed. Preview ${checks.preview?'✓':'✗'} VIN blank ${checks.vinBlank?'✓':'✗'}. Do not publish.`,false);
+      return note(`STOP: identity check failed. Vehicle ${checks.identity?'✓':'✗'} VIN blank ${checks.vinBlank?'✓':'✗'}. Do not publish.`,false);
     }
 
-    results.mileage=setValue(exactInput(['Mileage','Odometer']),p.mileage,{clearFirst:true});
-    results.price=setValue(exactInput(['Price']),p.price,{clearFirst:true});
-    if(p.color)results.color=await chooseExact('Exterior color',p.color);
-    results.description=setValue(exactInput(['Description']),p.description||description(p),{clearFirst:true});
+    note('Vehicle identity verified. Filling mileage, price and description…');
+
+    const mileageInput=await waitFor(()=>exactInput(['Mileage','Odometer'])||fieldInput('Mileage'),5000);
+    const priceInput=await waitFor(()=>exactInput(['Price'])||fieldInput('Price'),5000);
+    results.mileage=setValue(mileageInput,p.mileage,{clearFirst:true});
+    await sleep(400);
+    results.price=setValue(priceInput,p.price,{clearFirst:true});
+    await sleep(500);
+
+    if(p.color){
+      results.color=await chooseExact('Exterior color',p.color);
+      await sleep(400);
+    }
+
+    const descriptionInput=await waitFor(()=>exactInput(['Description'])||document.querySelector('textarea'),5000);
+    results.description=setValue(descriptionInput,p.description||description(p),{clearFirst:true});
 
     chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
-    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. Review photos/details, then publish manually.`,true);
+    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. Mileage, price and description filled. Review photos/details, then publish manually.`,true);
   }
 
   const payload=decodePayload();
