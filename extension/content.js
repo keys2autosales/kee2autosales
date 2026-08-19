@@ -18,6 +18,14 @@
     return p && VIN_RE.test(vin) && p.year && p.make && p.model && Number(p.price)>0;
   }
 
+  function firstValue(p,keys){
+    for(const key of keys){
+      const value=p?.[key];
+      if(value!==undefined && value!==null && String(value).trim()!=='') return value;
+    }
+    return '';
+  }
+
   function nativeSet(el,value){
     const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
     const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
@@ -131,23 +139,54 @@
     const c=norm(color);
     if(!c) return '';
     const rules=[
-      ['black',['black','ebony','onyx']],
-      ['white',['white','pearl white','ivory']],
-      ['blue',['blue','navy','azure']],
-      ['gray',['gray','grey','graphite','charcoal','slate']],
-      ['silver',['silver','platinum','aluminum','aluminium']],
-      ['red',['red','burgundy','maroon','crimson','ruby']],
-      ['green',['green','olive','emerald']],
-      ['brown',['brown','bronze','mocha','chestnut']],
-      ['gold',['gold','champagne','beige','tan']],
-      ['orange',['orange','copper']],
-      ['purple',['purple','violet','plum']],
-      ['pink',['pink','rose']]
+      ['Black',['black','ebony','onyx']],
+      ['White',['white','pearl white','ivory']],
+      ['Blue',['blue','navy','azure']],
+      ['Gray',['gray','grey','graphite','charcoal','slate']],
+      ['Silver',['silver','platinum','aluminum','aluminium']],
+      ['Red',['red','burgundy','maroon','crimson','ruby']],
+      ['Green',['green','olive','emerald']],
+      ['Brown',['brown','bronze','mocha','chestnut']],
+      ['Gold',['gold','champagne','beige','tan']],
+      ['Orange',['orange','copper']],
+      ['Purple',['purple','violet','plum']],
+      ['Pink',['pink','rose']]
     ];
-    for(const [facebookColor,terms] of rules){
-      if(terms.some(term=>c.includes(term))) return facebookColor[0].toUpperCase()+facebookColor.slice(1);
-    }
+    for(const [facebookColor,terms] of rules){if(terms.some(term=>c.includes(term))) return facebookColor;}
     return '';
+  }
+
+  function normalizeFuel(value){
+    const v=norm(value);
+    if(!v) return '';
+    if(v.includes('gas') || v.includes('petrol')) return 'Gasoline';
+    if(v.includes('diesel')) return 'Diesel';
+    if(v.includes('electric')) return 'Electric';
+    if(v.includes('hybrid')) return 'Hybrid';
+    if(v.includes('flex') || v.includes('e85')) return 'Flex';
+    return String(value).trim();
+  }
+
+  function normalizeCondition(value){
+    const v=norm(value);
+    if(!v) return '';
+    if(v.includes('new')) return 'New';
+    if(v.includes('used') || v.includes('pre-owned') || v.includes('preowned')) return 'Used';
+    return String(value).trim();
+  }
+
+  function normalizeBodyStyle(value){
+    const v=norm(value);
+    if(!v) return '';
+    if(v.includes('suv') || v.includes('sport utility')) return 'SUV';
+    if(v.includes('sedan')) return 'Sedan';
+    if(v.includes('coupe')) return 'Coupe';
+    if(v.includes('convertible')) return 'Convertible';
+    if(v.includes('wagon')) return 'Wagon';
+    if(v.includes('hatch')) return 'Hatchback';
+    if(v.includes('van') || v.includes('minivan')) return 'Van';
+    if(v.includes('truck') || v.includes('pickup')) return 'Truck';
+    return String(value).trim();
   }
 
   function description(p){
@@ -165,7 +204,7 @@
     if(!validPayload(p))return note('Keys2AutoSales stopped: vehicle is missing VIN, year, make, model, or price.',false);
     p.vin=String(p.vin).toUpperCase().replace(/[^A-Z0-9]/g,'');
     const results={};
-    note(`Keys2AutoSales v0.1.8: loading ${p.year} ${p.make} ${p.model}…`);
+    note(`Keys2AutoSales v0.1.9: loading ${p.year} ${p.make} ${p.model}…`);
 
     const vinInput=await waitFor(()=>exactInput(['VIN']),7000);
     if(vinInput&&vinInput.value){clearValue(vinInput);await sleep(900);} results.vinSkipped=true;
@@ -182,7 +221,7 @@
       return note(`STOP: identity check failed. Vehicle ${checks.identity?'✓':'✗'} VIN blank ${checks.vinBlank?'✓':'✗'}. Do not publish.`,false);
     }
 
-    note('Vehicle identity verified. Filling mileage, price and description…');
+    note('Vehicle identity verified. Filling listing details…');
 
     const mileageInput=await waitFor(()=>exactInput(['Mileage','Odometer'])||fieldInput('Mileage'),5000);
     const priceInput=await waitFor(()=>exactInput(['Price'])||fieldInput('Price'),5000);
@@ -195,21 +234,46 @@
       const facebookColor=normalizeFacebookColor(p.color);
       results.colorSource=p.color;
       results.colorNormalized=facebookColor;
-      if(facebookColor){
-        note(`Selecting exterior color: ${p.color} → ${facebookColor}`);
-        results.color=await chooseExact('Exterior color',facebookColor);
-        await sleep(400);
-      }else{
-        results.color=false;
-        note(`Exterior color needs review: ${p.color} did not map to a Facebook color.`,false);
-      }
+      if(facebookColor){results.color=await chooseExact('Exterior color',facebookColor);await sleep(400);}
+    }
+
+    const interiorSource=firstValue(p,['interiorColor','interior_color','interior','interior_colour']);
+    if(interiorSource){
+      const interiorColor=normalizeFacebookColor(interiorSource);
+      results.interiorColorSource=interiorSource;
+      results.interiorColorNormalized=interiorColor;
+      if(interiorColor){results.interiorColor=await chooseExact('Interior color',interiorColor);await sleep(400);}
+    }
+
+    const bodyStyleSource=firstValue(p,['bodyStyle','body_style','body','vehicleBodyStyle']);
+    if(bodyStyleSource){
+      const bodyStyle=normalizeBodyStyle(bodyStyleSource);
+      results.bodyStyleSource=bodyStyleSource;
+      results.bodyStyleNormalized=bodyStyle;
+      if(bodyStyle){results.bodyStyle=await chooseExact('Body style',bodyStyle);await sleep(400);}
+    }
+
+    const conditionSource=firstValue(p,['condition','vehicleCondition','vehicle_condition']);
+    if(conditionSource){
+      const condition=normalizeCondition(conditionSource);
+      results.conditionSource=conditionSource;
+      results.conditionNormalized=condition;
+      if(condition){results.condition=await chooseExact('Vehicle condition',condition);await sleep(400);}
+    }
+
+    const fuelSource=firstValue(p,['fuelType','fuel_type','fuel']);
+    if(fuelSource){
+      const fuel=normalizeFuel(fuelSource);
+      results.fuelSource=fuelSource;
+      results.fuelNormalized=fuel;
+      if(fuel){results.fuel=await chooseExact('Fuel type',fuel);await sleep(400);}
     }
 
     const descriptionInput=await waitFor(()=>exactInput(['Description'])||document.querySelector('textarea'),5000);
     results.description=setValue(descriptionInput,p.description||description(p),{clearFirst:true});
 
     chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
-    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. Mileage, price, exterior color and description filled. Review photos/details, then publish manually.`,true);
+    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. Core details filled; optional details added when available. Review photos/details, then publish manually.`,true);
   }
 
   const payload=decodePayload();
