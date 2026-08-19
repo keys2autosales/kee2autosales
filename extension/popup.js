@@ -1,9 +1,10 @@
-chrome.storage.local.get(['lastPayload','lastFillAt','idmsInventory','idmsCaptureAt','idmsSyncToken','facebookSellingCapture','facebookSellingCaptureAt'],({lastPayload,lastFillAt,idmsInventory,idmsCaptureAt,idmsSyncToken,facebookSellingCapture,facebookSellingCaptureAt})=>{
+chrome.storage.local.get(['lastPayload','lastFillAt','idmsInventory','idmsCaptureAt','idmsSyncToken','facebookSellingCapture','facebookSellingCaptureAt','lastMarketplacePreview'],({lastPayload,lastFillAt,idmsInventory,idmsCaptureAt,idmsSyncToken,facebookSellingCapture,facebookSellingCaptureAt,lastMarketplacePreview})=>{
   const v=document.getElementById('vehicle');
   const t=document.getElementById('time');
   const s=document.getElementById('idmsStatus');
   const fs=document.getElementById('facebookStatus');
   const token=document.getElementById('syncToken');
+  const apply=document.getElementById('reconcileFacebook');
   if(token&&idmsSyncToken) token.value=idmsSyncToken;
   if(lastPayload){v.textContent=`${lastPayload.year||''} ${lastPayload.make||''} ${lastPayload.model||''}`.trim() || 'Vehicle ready';}
   if(lastFillAt){t.textContent=`Last autofill: ${new Date(lastFillAt).toLocaleString()}`;}
@@ -17,9 +18,12 @@ chrome.storage.local.get(['lastPayload','lastFillAt','idmsInventory','idmsCaptur
   }
   if(facebookSellingCapture){
     const d=facebookSellingCapture.diagnostics||{};
-    const extra=d.with_real_url!==undefined?` • ${d.with_real_url} real URLs • ${d.without_real_url||0} internal matches`:'';
-    fs.textContent=`Last Facebook capture: ${facebookSellingCapture.listings?.length||0} listings${extra}${facebookSellingCaptureAt?' • '+new Date(facebookSellingCaptureAt).toLocaleString():''}`;
+    fs.textContent=`Last Facebook capture: ${facebookSellingCapture.listings?.length||0} listings${d.with_real_url!=null?` • ${d.with_real_url} real URLs • ${d.without_real_url||0} internal`:''}${facebookSellingCaptureAt?' • '+new Date(facebookSellingCaptureAt).toLocaleString():''}`;
     fs.className='small ok';
+  }
+  if(lastMarketplacePreview&&apply){
+    const safe=lastMarketplacePreview.matched>0 && lastMarketplacePreview.ambiguous===0;
+    apply.disabled=!safe;
   }
 });
 
@@ -66,6 +70,9 @@ pushBtn?.addEventListener('click',async()=>{
 const captureFacebookBtn=document.getElementById('captureFacebook');
 captureFacebookBtn?.addEventListener('click',async()=>{
   const status=document.getElementById('facebookStatus');
+  const apply=document.getElementById('reconcileFacebook');
+  if(apply) apply.disabled=true;
+  await chrome.storage.local.remove(['lastMarketplacePreview','lastMarketplacePreviewAt']);
   captureFacebookBtn.disabled=true; status.className='small'; status.textContent='Scanning Facebook Selling listings…';
   try{
     const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
@@ -74,26 +81,49 @@ captureFacebookBtn?.addEventListener('click',async()=>{
     if(!res?.ok) throw new Error(res?.error||'Could not read Facebook Marketplace listings.');
     const d=res.diagnostics||{};
     status.className='small ok';
-    status.textContent=`Captured ${res.count} unique Facebook listings • ${d.with_real_url||0} real URLs • ${d.without_real_url||0} internal matches • ${d.passes||0} scan passes. Ready to reconcile.`;
+    status.textContent=`Captured ${res.count} unique Facebook listings • ${d.with_real_url||0} real URLs • ${d.without_real_url||0} internal matches • ${d.passes||0} scan passes. Preview before applying.`;
   }catch(e){status.className='small err';status.textContent=e.message||String(e);}
   finally{captureFacebookBtn.disabled=false;}
+});
+
+async function runReconcile({dryRun}){
+  const token=String(document.getElementById('syncToken')?.value||'').trim();
+  if(!token) throw new Error('Enter the sync token first.');
+  await chrome.storage.local.set({idmsSyncToken:token});
+  const {facebookSellingCapture}=await chrome.storage.local.get('facebookSellingCapture');
+  if(!facebookSellingCapture?.listings?.length) throw new Error('No Facebook Selling capture is stored yet. Capture Facebook listings first.');
+  const r=await fetch('https://kee2autosales-nt8d.vercel.app/api/marketplace-reconcile',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({listings:facebookSellingCapture.listings,captured_at:facebookSellingCapture.captured_at,dry_run:dryRun})});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(data.error||`Marketplace reconciliation failed (${r.status})`);
+  return data;
+}
+
+const previewBtn=document.getElementById('previewFacebook');
+previewBtn?.addEventListener('click',async()=>{
+  const status=document.getElementById('facebookStatus');
+  const apply=document.getElementById('reconcileFacebook');
+  previewBtn.disabled=true; if(apply) apply.disabled=true;
+  status.className='small'; status.textContent='Previewing Marketplace matches — no database changes…';
+  try{
+    const data=await runReconcile({dryRun:true});
+    const safe=data.matched>0 && data.ambiguous===0;
+    status.className=`small ${safe?'ok':'err'}`;
+    status.textContent=`PREVIEW ONLY • ${data.total} listings • Matched ${data.matched} • Ambiguous ${data.ambiguous} • Unmatched ${data.unmatched} • Real URLs ${data.with_real_url}. ${safe?'Apply is enabled.':'Review before applying; no changes were made.'}`;
+    await chrome.storage.local.set({lastMarketplacePreview:data,lastMarketplacePreviewAt:new Date().toISOString()});
+    if(apply) apply.disabled=!safe;
+  }catch(e){status.className='small err';status.textContent=e.message||String(e);}
+  finally{previewBtn.disabled=false;}
 });
 
 const reconcileBtn=document.getElementById('reconcileFacebook');
 reconcileBtn?.addEventListener('click',async()=>{
   const status=document.getElementById('facebookStatus');
-  const token=String(document.getElementById('syncToken')?.value||'').trim();
-  reconcileBtn.disabled=true; status.className='small'; status.textContent='Matching Facebook listings to Keys2AutoSales…';
+  reconcileBtn.disabled=true; status.className='small'; status.textContent='Applying verified Marketplace matches…';
   try{
-    if(!token) throw new Error('Enter the sync token first.');
-    await chrome.storage.local.set({idmsSyncToken:token});
-    const {facebookSellingCapture}=await chrome.storage.local.get('facebookSellingCapture');
-    if(!facebookSellingCapture?.listings?.length) throw new Error('No Facebook Selling capture is stored yet. Capture Facebook listings first.');
-    const r=await fetch('https://kee2autosales-nt8d.vercel.app/api/marketplace-reconcile',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${token}`},body:JSON.stringify({listings:facebookSellingCapture.listings,captured_at:facebookSellingCapture.captured_at})});
-    const data=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(data.error||`Marketplace reconciliation failed (${r.status})`);
-    status.className='small ok'; status.textContent=`Reconciled ${data.total} listings • Matched ${data.matched} • Ambiguous ${data.ambiguous} • Unmatched ${data.unmatched}`;
+    const {lastMarketplacePreview}=await chrome.storage.local.get('lastMarketplacePreview');
+    if(!lastMarketplacePreview||lastMarketplacePreview.ambiguous!==0||lastMarketplacePreview.matched<=0) throw new Error('Run a clean Preview Matches first.');
+    const data=await runReconcile({dryRun:false});
+    status.className='small ok'; status.textContent=`Applied ${data.matched} verified matches • Ambiguous ${data.ambiguous} • Unmatched ${data.unmatched}.`;
     await chrome.storage.local.set({lastMarketplaceReconcile:data,lastMarketplaceReconcileAt:new Date().toISOString()});
   }catch(e){status.className='small err';status.textContent=e.message||String(e);}
-  finally{reconcileBtn.disabled=false;}
 });
