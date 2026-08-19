@@ -17,30 +17,55 @@
     return typeof window.cleanVehicleModel==='function' ? window.cleanVehicleModel(raw) : raw;
   }
 
-  function vehiclePayload(v){
-    const vin=cleanVin(v.vin);
+  function firstValue(...values){
+    return values.find(v=>v!==undefined&&v!==null&&String(v).trim()!=='')||'';
+  }
+
+  async function rawCloudVehicle(id){
+    try{
+      const res=await fetch('/api/vehicles');
+      if(!res.ok) return null;
+      const rows=await res.json();
+      return Array.isArray(rows)?rows.find(r=>String(r.id)===String(id))||null:null;
+    }catch(err){
+      console.warn('Keys2AutoSales: optional cloud vehicle details unavailable',err);
+      return null;
+    }
+  }
+
+  function vehiclePayload(v,row={}){
+    const vin=cleanVin(v.vin||row.vin);
     return {
-      schema:'k2-marketplace-v2',
-      id:String(v.id||''),
+      schema:'k2-marketplace-v3',
+      id:String(v.id||row.id||''),
       vin,
-      stock:String(v.stock||'').trim(),
-      year:Number(v.year||0)||'',
-      make:String(v.make||'').trim(),
-      model:cleanModel(v.model),
-      mileage:Number(v.mileage||0)||'',
-      price:Number(v.price||0)||'',
-      color:String(v.color||'').trim(),
+      stock:String(v.stock||row.stock_number||'').trim(),
+      year:Number(v.year||row.year||0)||'',
+      make:String(v.make||row.make||'').trim(),
+      model:cleanModel(v.model||row.model_trim),
+      mileage:Number(v.mileage||row.mileage||0)||'',
+      price:Number(v.price||row.dealer_price||0)||'',
+      color:String(firstValue(v.color,row.color,row.exterior_color)).trim(),
+      interiorColor:String(firstValue(v.interiorColor,v.interior_color,row.interior_color)).trim(),
+      bodyStyle:String(firstValue(v.bodyStyle,v.body_style,row.body_style)).trim(),
+      vehicleCondition:String(firstValue(v.vehicleCondition,v.vehicle_condition,row.vehicle_condition)).trim(),
+      fuelType:String(firstValue(v.fuelType,v.fuel_type,row.fuel_type)).trim(),
+      transmission:String(firstValue(v.transmission,row.transmission)).trim(),
+      photoUrls:Array.isArray(v.photoUrls)?v.photoUrls:(Array.isArray(row.photo_urls)?row.photo_urls:[]),
       vehicleType:'Car/Truck',
       bookingLink:state.settings?.bookingLink||'',
       applicationLink:state.settings?.applicationLink||''
     };
   }
 
-  window.autoFillMarketplace=function(id){
+  window.autoFillMarketplace=async function(id){
     const v=(state.inventory||[]).find(x=>String(x.id)===String(id));
     if(!v) return alert('Vehicle not found.');
     if(!Number(v.price||0)) return alert('Add a dealer price before sending this vehicle to Marketplace.');
-    const payload=vehiclePayload(v);
+
+    const row=await rawCloudVehicle(id);
+    const payload=vehiclePayload(v,row||{});
+
     if(!VIN_RE.test(payload.vin)){
       return alert(`This vehicle does not have a valid 17-character VIN. Current VIN: ${payload.vin||'missing'}`);
     }
