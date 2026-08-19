@@ -21,9 +21,7 @@ chrome.storage.local.get(['lastPayload','lastFillAt','idmsInventory','idmsCaptur
     fs.textContent=`Last Facebook capture: ${facebookSellingCapture.listings?.length||0} listings${d.with_real_url!=null?` • ${d.with_real_url} real URLs • ${d.without_real_url||0} internal`:''}${facebookSellingCaptureAt?' • '+new Date(facebookSellingCaptureAt).toLocaleString():''}`;
     fs.className='small ok';
   }
-  if(lastMarketplacePreview&&apply){
-    apply.disabled=!(lastMarketplacePreview.matched>0);
-  }
+  if(lastMarketplacePreview&&apply){apply.disabled=!(lastMarketplacePreview.matched>0);}
 });
 
 const captureBtn=document.getElementById('captureIdms');
@@ -40,8 +38,7 @@ captureBtn?.addEventListener('click',async()=>{
     const extra=[d.missing_vin?`${d.missing_vin} missing VIN`:'',d.unparsed_rows?`${d.unparsed_rows} unparsed`:'',d.duplicate_rows?`${d.duplicate_rows} duplicate`:''].filter(Boolean).join(' • ');
     status.className=`small ${mismatch?'err':'ok'}`;
     status.textContent=`Captured ${expected?`${captured}/${expected}`:captured} vehicles${extra?' • '+extra:''}. ${mismatch?'Review diagnostics before cloud sync.':'Capture matches IDMS and is ready for Keys2AutoSales sync.'}`;
-  }catch(e){status.className='small err';status.textContent=e.message||String(e);}
-  finally{captureBtn.disabled=false;}
+  }catch(e){status.className='small err';status.textContent=e.message||String(e);}finally{captureBtn.disabled=false;}
 });
 
 const pushBtn=document.getElementById('pushCloud');
@@ -62,8 +59,7 @@ pushBtn?.addEventListener('click',async()=>{
     status.className='small ok';
     status.textContent=`Cloud synced ${data.total} vehicles • New ${data.new} • Updated ${data.updated} • Returned ${data.returned} • Sold/Removed ${data.removed} • Unchanged ${data.unchanged}`;
     await chrome.storage.local.set({lastCloudSync:data,lastCloudSyncAt:new Date().toISOString()});
-  }catch(e){status.className='small err';status.textContent=e.message||String(e);}
-  finally{pushBtn.disabled=false;}
+  }catch(e){status.className='small err';status.textContent=e.message||String(e);}finally{pushBtn.disabled=false;}
 });
 
 const captureFacebookBtn=document.getElementById('captureFacebook');
@@ -81,8 +77,7 @@ captureFacebookBtn?.addEventListener('click',async()=>{
     const d=res.diagnostics||{};
     status.className='small ok';
     status.textContent=`Captured ${res.count} unique Facebook listings • ${d.with_real_url||0} real URLs • ${d.without_real_url||0} internal matches • ${d.passes||0} scan passes. Preview before applying.`;
-  }catch(e){status.className='small err';status.textContent=e.message||String(e);}
-  finally{captureFacebookBtn.disabled=false;}
+  }catch(e){status.className='small err';status.textContent=e.message||String(e);}finally{captureFacebookBtn.disabled=false;}
 });
 
 async function runReconcile({dryRun}){
@@ -108,24 +103,26 @@ previewBtn?.addEventListener('click',async()=>{
     const high=data.confidence?.high??data.matched??0;
     const review=data.confidence?.review??data.ambiguous??0;
     const low=data.confidence?.low??data.unmatched??0;
+    const collisions=data.duplicate_collision_groups||0;
+    const collisionListings=data.duplicate_collision_listings||0;
     const safe=high>0;
     status.className=`small ${safe?'ok':'err'}`;
-    status.textContent=`PREVIEW ONLY • ${data.total} listings • High ${high} • Review ${review} • Low ${low} • Real URLs ${data.with_real_url}. ${safe?'Apply will write HIGH-confidence matches only.':'No high-confidence matches yet; no changes were made.'}`;
+    status.textContent=`PREVIEW ONLY • ${data.total} listings • High ${high} • Review ${review} • Low ${low} • Duplicate collisions ${collisions}${collisions?` (${collisionListings} listings)`:''} • Real URLs ${data.with_real_url}. ${safe?'Apply will write unique HIGH-confidence matches only.':'No high-confidence matches yet; no changes were made.'}`;
     await chrome.storage.local.set({lastMarketplacePreview:data,lastMarketplacePreviewAt:new Date().toISOString()});
     if(apply) apply.disabled=!safe;
-  }catch(e){status.className='small err';status.textContent=e.message||String(e);}
-  finally{previewBtn.disabled=false;}
+  }catch(e){status.className='small err';status.textContent=e.message||String(e);}finally{previewBtn.disabled=false;}
 });
 
 const reconcileBtn=document.getElementById('reconcileFacebook');
 reconcileBtn?.addEventListener('click',async()=>{
   const status=document.getElementById('facebookStatus');
-  reconcileBtn.disabled=true; status.className='small'; status.textContent='Applying high-confidence Marketplace matches…';
+  reconcileBtn.disabled=true; status.className='small'; status.textContent='Applying unique high-confidence Marketplace matches…';
   try{
     const {lastMarketplacePreview}=await chrome.storage.local.get('lastMarketplacePreview');
     if(!lastMarketplacePreview||lastMarketplacePreview.matched<=0) throw new Error('Run Preview Matches and confirm at least one high-confidence match first.');
     const data=await runReconcile({dryRun:false});
-    status.className='small ok'; status.textContent=`Applied ${data.matched} HIGH-confidence matches • Review ${data.ambiguous} untouched • Low ${data.unmatched} untouched.`;
+    status.className='small ok';
+    status.textContent=`Applied ${data.matched} unique HIGH-confidence matches • Review ${data.ambiguous} untouched • Low ${data.unmatched} untouched • Duplicate collisions ${data.duplicate_collision_groups||0} protected.`;
     await chrome.storage.local.set({lastMarketplaceReconcile:data,lastMarketplaceReconcileAt:new Date().toISOString()});
   }catch(e){status.className='small err';status.textContent=e.message||String(e);}
 });
