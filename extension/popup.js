@@ -22,8 +22,7 @@ chrome.storage.local.get(['lastPayload','lastFillAt','idmsInventory','idmsCaptur
     fs.className='small ok';
   }
   if(lastMarketplacePreview&&apply){
-    const safe=lastMarketplacePreview.matched>0 && lastMarketplacePreview.ambiguous===0;
-    apply.disabled=!safe;
+    apply.disabled=!(lastMarketplacePreview.matched>0);
   }
 });
 
@@ -106,9 +105,12 @@ previewBtn?.addEventListener('click',async()=>{
   status.className='small'; status.textContent='Previewing Marketplace matches — no database changes…';
   try{
     const data=await runReconcile({dryRun:true});
-    const safe=data.matched>0 && data.ambiguous===0;
+    const high=data.confidence?.high??data.matched??0;
+    const review=data.confidence?.review??data.ambiguous??0;
+    const low=data.confidence?.low??data.unmatched??0;
+    const safe=high>0;
     status.className=`small ${safe?'ok':'err'}`;
-    status.textContent=`PREVIEW ONLY • ${data.total} listings • Matched ${data.matched} • Ambiguous ${data.ambiguous} • Unmatched ${data.unmatched} • Real URLs ${data.with_real_url}. ${safe?'Apply is enabled.':'Review before applying; no changes were made.'}`;
+    status.textContent=`PREVIEW ONLY • ${data.total} listings • High ${high} • Review ${review} • Low ${low} • Real URLs ${data.with_real_url}. ${safe?'Apply will write HIGH-confidence matches only.':'No high-confidence matches yet; no changes were made.'}`;
     await chrome.storage.local.set({lastMarketplacePreview:data,lastMarketplacePreviewAt:new Date().toISOString()});
     if(apply) apply.disabled=!safe;
   }catch(e){status.className='small err';status.textContent=e.message||String(e);}
@@ -118,12 +120,12 @@ previewBtn?.addEventListener('click',async()=>{
 const reconcileBtn=document.getElementById('reconcileFacebook');
 reconcileBtn?.addEventListener('click',async()=>{
   const status=document.getElementById('facebookStatus');
-  reconcileBtn.disabled=true; status.className='small'; status.textContent='Applying verified Marketplace matches…';
+  reconcileBtn.disabled=true; status.className='small'; status.textContent='Applying high-confidence Marketplace matches…';
   try{
     const {lastMarketplacePreview}=await chrome.storage.local.get('lastMarketplacePreview');
-    if(!lastMarketplacePreview||lastMarketplacePreview.ambiguous!==0||lastMarketplacePreview.matched<=0) throw new Error('Run a clean Preview Matches first.');
+    if(!lastMarketplacePreview||lastMarketplacePreview.matched<=0) throw new Error('Run Preview Matches and confirm at least one high-confidence match first.');
     const data=await runReconcile({dryRun:false});
-    status.className='small ok'; status.textContent=`Applied ${data.matched} verified matches • Ambiguous ${data.ambiguous} • Unmatched ${data.unmatched}.`;
+    status.className='small ok'; status.textContent=`Applied ${data.matched} HIGH-confidence matches • Review ${data.ambiguous} untouched • Low ${data.unmatched} untouched.`;
     await chrome.storage.local.set({lastMarketplaceReconcile:data,lastMarketplaceReconcileAt:new Date().toISOString()});
   }catch(e){status.className='small err';status.textContent=e.message||String(e);}
 });
