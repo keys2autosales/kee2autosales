@@ -3,6 +3,10 @@
 (function(){
   const SAFE_FIELDS=['year','make','model','bodyStyle','fuelType','transmission'];
 
+  function inventory(){
+    try{return Array.isArray(state?.inventory)?state.inventory:[];}catch(_){return [];}
+  }
+
   function cleanVin(value=''){
     return String(value).toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,'').slice(0,17);
   }
@@ -48,8 +52,8 @@
     const data=await decodeVin(vin);
     const {next,changed}=mergeDecoded(v,data);
     if(!changed.length) return {status:'unchanged',data};
-    if(typeof window.updateCloudVehicle!=='function') throw new Error('Cloud vehicle updater is unavailable');
-    const saved=await window.updateCloudVehicle(next);
+    if(typeof updateCloudVehicle!=='function') throw new Error('Cloud vehicle updater is unavailable');
+    const saved=await updateCloudVehicle(next);
     Object.assign(v,saved||next);
     return {status:'updated',changed,data};
   }
@@ -57,7 +61,7 @@
   function delay(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
 
   async function enrichMissingInventory(){
-    const vehicles=(window.state?.inventory||[]).filter(v=>cleanVin(v.vin||'').length===17&&missingSafeField(v));
+    const vehicles=inventory().filter(v=>cleanVin(v.vin||'').length===17&&missingSafeField(v));
     if(!vehicles.length){
       alert('No VIN-decodable missing fields were found in the current inventory.');
       return;
@@ -87,11 +91,10 @@
         failures.push(`${v.stock||v.vin||'Vehicle'}: ${err.message}`);
         console.error('VIN batch enrichment failed:',v,err);
       }
-      // Be gentle with the VIN service and Vercel/Supabase writes.
       await delay(250);
     }
 
-    try{if(typeof window.save==='function') window.save();}catch(_){ }
+    try{if(typeof save==='function') save();}catch(_){ }
     if(status) status.textContent=`VIN enrichment complete: ${updated} updated, ${unchanged} unchanged, ${failed} failed.`;
     if(btn){btn.disabled=false;btn.textContent=original;}
 
@@ -102,9 +105,9 @@
   }
 
   function install(){
-    const inventory=document.getElementById('inventory');
-    if(!inventory||inventory.querySelector('.k2-batch-vin-btn')) return;
-    const importPanel=[...inventory.querySelectorAll('.panel.compact')].find(p=>p.textContent.includes('IDMS Import'));
+    const inventoryScreen=document.getElementById('inventory');
+    if(!inventoryScreen||inventoryScreen.querySelector('.k2-batch-vin-btn')) return;
+    const importPanel=[...inventoryScreen.querySelectorAll('.panel.compact')].find(p=>p.textContent.includes('IDMS Import'));
     const actions=importPanel?.querySelector('.panel-head');
     if(!actions) return;
 
