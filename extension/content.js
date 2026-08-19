@@ -106,6 +106,14 @@
     target.click(); await sleep(800); return true;
   }
 
+  async function chooseFirst(label,values){
+    for(const value of values.filter(Boolean)){
+      if(await chooseExact(label,value)) return value;
+      await sleep(250);
+    }
+    return '';
+  }
+
   async function chooseModel(value){
     if(!value)return false;
     const wanted=norm(value);
@@ -139,18 +147,11 @@
     const c=norm(color);
     if(!c) return '';
     const rules=[
-      ['Black',['black','ebony','onyx']],
-      ['White',['white','pearl white','ivory']],
-      ['Blue',['blue','navy','azure']],
-      ['Gray',['gray','grey','graphite','charcoal','slate']],
-      ['Silver',['silver','platinum','aluminum','aluminium']],
-      ['Red',['red','burgundy','maroon','crimson','ruby']],
-      ['Green',['green','olive','emerald']],
-      ['Brown',['brown','bronze','mocha','chestnut']],
-      ['Gold',['gold','champagne','beige','tan']],
-      ['Orange',['orange','copper']],
-      ['Purple',['purple','violet','plum']],
-      ['Pink',['pink','rose']]
+      ['Black',['black','ebony','onyx']],['White',['white','pearl white','ivory']],['Blue',['blue','navy','azure']],
+      ['Gray',['gray','grey','graphite','charcoal','slate']],['Silver',['silver','platinum','aluminum','aluminium']],
+      ['Red',['red','burgundy','maroon','crimson','ruby']],['Green',['green','olive','emerald']],
+      ['Brown',['brown','bronze','mocha','chestnut']],['Gold',['gold','champagne','beige','tan']],
+      ['Orange',['orange','copper']],['Purple',['purple','violet','plum']],['Pink',['pink','rose']]
     ];
     for(const [facebookColor,terms] of rules){if(terms.some(term=>c.includes(term))) return facebookColor;}
     return '';
@@ -159,20 +160,32 @@
   function normalizeFuel(value){
     const v=norm(value);
     if(!v) return '';
+    if(v.includes('plug')&&v.includes('hybrid')) return 'Plug-in hybrid';
     if(v.includes('gas') || v.includes('petrol')) return 'Gasoline';
     if(v.includes('diesel')) return 'Diesel';
     if(v.includes('electric')) return 'Electric';
     if(v.includes('hybrid')) return 'Hybrid';
-    if(v.includes('flex') || v.includes('e85')) return 'Flex';
+    if(v.includes('flex') || v.includes('e85')) return 'Flex fuel';
     return String(value).trim();
   }
 
-  function normalizeCondition(value){
+  function conditionCandidates(value){
     const v=norm(value);
-    if(!v) return '';
-    if(v.includes('new')) return 'New';
-    if(v.includes('used') || v.includes('pre-owned') || v.includes('preowned')) return 'Used';
-    return String(value).trim();
+    if(!v) return [];
+    if(v.includes('like new') || v.includes('excellent')) return ['Excellent','Like new','Used - Like New'];
+    if(v.includes('good')) return ['Good','Used - Good'];
+    if(v.includes('fair')) return ['Fair','Used - Fair'];
+    if(v==='new' || v.startsWith('new ')) return ['New'];
+    if(v.includes('used') || v.includes('pre-owned') || v.includes('preowned')) return ['Good','Used'];
+    return [String(value).trim()];
+  }
+
+  function transmissionCandidates(value){
+    const v=norm(value);
+    if(!v) return [];
+    if(v.includes('auto') || v.includes('cvt')) return ['Automatic transmission','Automatic'];
+    if(v.includes('manual') || v.includes('stick')) return ['Manual transmission','Manual'];
+    return [String(value).trim()];
   }
 
   function normalizeBodyStyle(value){
@@ -196,15 +209,47 @@
   function note(text,ok=true){
     document.querySelector('.k2-fill-note')?.remove();
     const n=document.createElement('div');n.className='k2-fill-note';n.textContent=text;
-    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'500px'});
-    document.body.appendChild(n);setTimeout(()=>n.remove(),12000);
+    Object.assign(n.style,{position:'fixed',right:'18px',bottom:'18px',zIndex:2147483647,background:ok?'#0f172a':'#991b1b',color:'#fff',padding:'12px 16px',borderRadius:'10px',font:'600 13px system-ui',boxShadow:'0 12px 30px rgba(0,0,0,.25)',maxWidth:'520px'});
+    document.body.appendChild(n);setTimeout(()=>n.remove(),14000);
+  }
+
+  async function fetchPhotoFile(url,index){
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),12000);
+    try{
+      const res=await fetch(url,{signal:controller.signal,credentials:'omit'});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob=await res.blob();
+      if(!blob.type.startsWith('image/')) throw new Error('Not an image');
+      const ext=(blob.type.split('/')[1]||'jpg').replace('jpeg','jpg');
+      return new File([blob],`k2-${String(index+1).padStart(2,'0')}.${ext}`,{type:blob.type,lastModified:Date.now()});
+    }finally{clearTimeout(timeout);}
+  }
+
+  async function uploadPhotos(urls){
+    const list=(Array.isArray(urls)?urls:[]).filter(u=>/^https?:\/\//i.test(String(u))).slice(0,20);
+    if(!list.length) return {attempted:0,loaded:0,uploaded:false,reason:'no photo URLs'};
+    const input=await waitFor(()=>[...document.querySelectorAll('input[type="file"]')].find(el=>String(el.accept||'').toLowerCase().includes('image')),5000);
+    if(!input) return {attempted:list.length,loaded:0,uploaded:false,reason:'Facebook photo input not found'};
+    const files=[];
+    for(let i=0;i<list.length;i++){
+      try{files.push(await fetchPhotoFile(String(list[i]),i));}
+      catch(err){console.warn('Keys2AutoSales photo fetch failed',list[i],err);}
+    }
+    if(!files.length) return {attempted:list.length,loaded:0,uploaded:false,reason:'photo URLs could not be fetched'};
+    const dt=new DataTransfer(); files.forEach(f=>dt.items.add(f));
+    input.files=dt.files;
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+    await sleep(2500);
+    return {attempted:list.length,loaded:files.length,uploaded:true};
   }
 
   async function autofill(p){
     if(!validPayload(p))return note('Keys2AutoSales stopped: vehicle is missing VIN, year, make, model, or price.',false);
     p.vin=String(p.vin).toUpperCase().replace(/[^A-Z0-9]/g,'');
     const results={};
-    note(`Keys2AutoSales v0.1.9: loading ${p.year} ${p.make} ${p.model}…`);
+    note(`Keys2AutoSales v0.2.0: loading ${p.year} ${p.make} ${p.model}…`);
 
     const vinInput=await waitFor(()=>exactInput(['VIN']),7000);
     if(vinInput&&vinInput.value){clearValue(vinInput);await sleep(900);} results.vinSkipped=true;
@@ -222,58 +267,40 @@
     }
 
     note('Vehicle identity verified. Filling listing details…');
-
     const mileageInput=await waitFor(()=>exactInput(['Mileage','Odometer'])||fieldInput('Mileage'),5000);
     const priceInput=await waitFor(()=>exactInput(['Price'])||fieldInput('Price'),5000);
-    results.mileage=setValue(mileageInput,p.mileage,{clearFirst:true});
-    await sleep(400);
-    results.price=setValue(priceInput,p.price,{clearFirst:true});
-    await sleep(500);
+    results.mileage=setValue(mileageInput,p.mileage,{clearFirst:true}); await sleep(400);
+    results.price=setValue(priceInput,p.price,{clearFirst:true}); await sleep(500);
 
-    if(p.color){
-      const facebookColor=normalizeFacebookColor(p.color);
-      results.colorSource=p.color;
-      results.colorNormalized=facebookColor;
-      if(facebookColor){results.color=await chooseExact('Exterior color',facebookColor);await sleep(400);}
-    }
+    if(p.color){const c=normalizeFacebookColor(p.color);results.colorSource=p.color;results.colorNormalized=c;if(c){results.color=await chooseExact('Exterior color',c);await sleep(400);}}
 
     const interiorSource=firstValue(p,['interiorColor','interior_color','interior','interior_colour']);
-    if(interiorSource){
-      const interiorColor=normalizeFacebookColor(interiorSource);
-      results.interiorColorSource=interiorSource;
-      results.interiorColorNormalized=interiorColor;
-      if(interiorColor){results.interiorColor=await chooseExact('Interior color',interiorColor);await sleep(400);}
-    }
+    if(interiorSource){const c=normalizeFacebookColor(interiorSource);results.interiorColorSource=interiorSource;results.interiorColorNormalized=c;if(c){results.interiorColor=await chooseExact('Interior color',c);await sleep(400);}}
 
     const bodyStyleSource=firstValue(p,['bodyStyle','body_style','body','vehicleBodyStyle']);
-    if(bodyStyleSource){
-      const bodyStyle=normalizeBodyStyle(bodyStyleSource);
-      results.bodyStyleSource=bodyStyleSource;
-      results.bodyStyleNormalized=bodyStyle;
-      if(bodyStyle){results.bodyStyle=await chooseExact('Body style',bodyStyle);await sleep(400);}
-    }
+    if(bodyStyleSource){const b=normalizeBodyStyle(bodyStyleSource);results.bodyStyleSource=bodyStyleSource;results.bodyStyleNormalized=b;if(b){results.bodyStyle=await chooseExact('Body style',b);await sleep(400);}}
 
     const conditionSource=firstValue(p,['condition','vehicleCondition','vehicle_condition']);
-    if(conditionSource){
-      const condition=normalizeCondition(conditionSource);
-      results.conditionSource=conditionSource;
-      results.conditionNormalized=condition;
-      if(condition){results.condition=await chooseExact('Vehicle condition',condition);await sleep(400);}
-    }
+    if(conditionSource){results.conditionSource=conditionSource;results.condition=await chooseFirst('Vehicle condition',conditionCandidates(conditionSource));await sleep(400);}
 
     const fuelSource=firstValue(p,['fuelType','fuel_type','fuel']);
-    if(fuelSource){
-      const fuel=normalizeFuel(fuelSource);
-      results.fuelSource=fuelSource;
-      results.fuelNormalized=fuel;
-      if(fuel){results.fuel=await chooseExact('Fuel type',fuel);await sleep(400);}
-    }
+    if(fuelSource){const fuel=normalizeFuel(fuelSource);results.fuelSource=fuelSource;results.fuelNormalized=fuel;if(fuel){results.fuel=await chooseExact('Fuel type',fuel);await sleep(400);}}
+
+    const transmissionSource=firstValue(p,['transmission','transmissionType','transmission_type']);
+    if(transmissionSource){results.transmissionSource=transmissionSource;results.transmission=await chooseFirst('Transmission',transmissionCandidates(transmissionSource));await sleep(400);}
 
     const descriptionInput=await waitFor(()=>exactInput(['Description'])||document.querySelector('textarea'),5000);
     results.description=setValue(descriptionInput,p.description||description(p),{clearFirst:true});
 
+    const photoUrls=firstValue(p,['photoUrls','photo_urls','photos']);
+    if(Array.isArray(photoUrls)&&photoUrls.length){
+      note(`Details filled. Loading up to ${Math.min(photoUrls.length,20)} vehicle photos…`);
+      results.photos=await uploadPhotos(photoUrls);
+    }else results.photos={attempted:0,loaded:0,uploaded:false,reason:'no photo URLs in vehicle record'};
+
     chrome.storage.local.set({lastPayload:p,lastFillAt:new Date().toISOString(),lastResults:results,lastIdentityChecks:checks});
-    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. Core details filled; optional details added when available. Review photos/details, then publish manually.`,true);
+    const photoMsg=results.photos?.uploaded?` ${results.photos.loaded} photo${results.photos.loaded===1?'':'s'} loaded.`:' Photos skipped until photo URLs are available.';
+    note(`Keys2AutoSales verified ${p.year} ${p.make} ${p.model}. Listing details filled.${photoMsg} Review everything, then publish manually.`,true);
   }
 
   const payload=decodePayload();
