@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Keys2AutoSales Social Listing Assistant",
-  "version": "0.3.1",
-  "description": "Autofills Facebook Marketplace and captures DealerSocket IDMS inventory for Keys2AutoSales.",
+  "version": "0.4.0",
+  "description": "Autofills Facebook Marketplace and syncs DealerSocket IDMS inventory to Keys2AutoSales.",
   "permissions": ["storage", "activeTab", "tabs"],
   "host_permissions": [
     "https://www.facebook.com/*",
-    "https://idms.dealersocket.com/*"
+    "https://idms.dealersocket.com/*",
+    "https://kee2autosales-nt8d.vercel.app/*"
   ],
   "content_scripts": [
     {
