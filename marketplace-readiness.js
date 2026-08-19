@@ -5,6 +5,10 @@
     ['interiorColor','Interior Color'],['bodyStyle','Body Style'],['vehicleCondition','Condition'],['fuelType','Fuel Type'],['transmission','Transmission']
   ];
 
+  function inventory(){
+    try{return Array.isArray(state?.inventory)?state.inventory:[];}catch(_){return [];}
+  }
+
   function value(v,key){
     if(key==='interiorColor') return v.interiorColor||v.interior_color||'';
     if(key==='bodyStyle') return v.bodyStyle||v.body_style||'';
@@ -44,7 +48,7 @@
   function enhanceCards(){
     document.querySelectorAll('#inventoryList .vehicle-card').forEach(card=>{
       const id=vehicleIdFromCard(card); if(!id) return;
-      const v=(window.state?.inventory||[]).find(x=>String(x.id)===String(id)); if(!v) return;
+      const v=inventory().find(x=>String(x.id)===String(id)); if(!v) return;
       const info=window.marketplaceReadiness(v);
       let badge=card.querySelector('.k2-readiness-badge');
       if(!badge){
@@ -71,7 +75,7 @@
       const importPanel=host.querySelector('.panel.compact');
       importPanel?.after(panel);
     }
-    const vehicles=window.state?.inventory||[];
+    const vehicles=inventory();
     const infos=vehicles.map(v=>window.marketplaceReadiness(v));
     const ready=infos.filter(x=>x.ready).length;
     const incomplete=infos.length-ready;
@@ -84,7 +88,7 @@
     window.__k2ReadinessWrapped=true;
     const original=window.autoFillMarketplace;
     window.autoFillMarketplace=async function(id){
-      const v=(window.state?.inventory||[]).find(x=>String(x.id)===String(id));
+      const v=inventory().find(x=>String(x.id)===String(id));
       if(!v) return original(id);
       const info=window.marketplaceReadiness(v);
       if(!info.ready){
