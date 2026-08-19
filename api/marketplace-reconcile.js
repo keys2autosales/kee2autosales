@@ -7,6 +7,7 @@ async function sb(path,options={}){const r=await fetch(`${SUPABASE_URL}/rest/v1/
 async function resolveUserId(){if(CONFIGURED_USER_ID)return String(CONFIGURED_USER_ID).trim();const r=await fetch(`${SUPABASE_URL}/auth/v1/admin/users?per_page=2`,{headers:{apikey:SERVICE_KEY,Authorization:`Bearer ${SERVICE_KEY}`}});const data=await r.json().catch(()=>({}));const users=Array.isArray(data?.users)?data.users:[];if(users.length===1&&users[0]?.id)return users[0].id;throw new Error('Could not uniquely resolve Keys2AutoSales user.');}
 const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
 const num=v=>{const n=Number(String(v??'').replace(/[$,\s]/g,''));return Number.isFinite(n)?n:0;};
+const realFacebookUrl=url=>/^https:\/\/(?:www\.)?facebook\.com\/marketplace\//i.test(String(url||''))?String(url):'';
 function vehicleSignature(v){return norm(`${v.year||''} ${v.make||''} ${v.model_trim||''}`);}
 function matchListing(listing,vehicles){
   const hay=norm(`${listing.title||''} ${listing.raw_text||''}`);
@@ -35,13 +36,17 @@ export default async function handler(req,res){
     for(const listing of listings){
       const m=matchListing(listing,vehicles);
       if(m.status==='matched') matched++; else if(m.status==='ambiguous') ambiguous++; else unmatched++;
-      const capture={user_id:userId,captured_at:now,listing_id:String(listing.listing_id||''),listing_url:String(listing.listing_url||''),title:String(listing.title||''),price:num(listing.price)||null,status:String(listing.status||'active'),raw_text:String(listing.raw_text||'').slice(0,1200),matched_vehicle_id:m.vehicle?.id||null,match_status:m.status,match_reason:m.reason};
+      const captureUrl=String(listing.listing_url||listing.actual_listing_url||`k2fb://capture/${listing.listing_id||Date.now()}`);
+      const actualUrl=realFacebookUrl(listing.actual_listing_url||listing.listing_url);
+      const capture={user_id:userId,captured_at:now,listing_id:String(listing.listing_id||''),listing_url:captureUrl,title:String(listing.title||''),price:num(listing.price)||null,status:String(listing.status||'active'),raw_text:String(listing.raw_text||'').slice(0,1200),matched_vehicle_id:m.vehicle?.id||null,match_status:m.status,match_reason:m.reason};
       await sb('marketplace_listing_captures?on_conflict=user_id,listing_url',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(capture)});
       if(m.vehicle){
         const active=!['sold','draft'].includes(String(listing.status||'').toLowerCase());
-        await sb(`vehicles?id=eq.${encodeURIComponent(m.vehicle.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({fb_posted:active,fb_listing_url:listing.listing_url||m.vehicle.fb_listing_url||null,fb_price:num(listing.price)||m.vehicle.fb_price||null,fb_status:active?'LIVE':'VERIFY',fb_last_verified_at:now,updated_at:now})});
+        const patch={fb_posted:active,fb_price:num(listing.price)||m.vehicle.fb_price||null,fb_status:active?'LIVE':'VERIFY',fb_last_verified_at:now,updated_at:now};
+        if(actualUrl) patch.fb_listing_url=actualUrl;
+        await sb(`vehicles?id=eq.${encodeURIComponent(m.vehicle.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify(patch)});
       }
-      results.push({listing_id:listing.listing_id||'',title:listing.title||'',status:m.status,reason:m.reason,vehicle_id:m.vehicle?.id||null});
+      results.push({listing_id:listing.listing_id||'',title:listing.title||'',status:m.status,reason:m.reason,vehicle_id:m.vehicle?.id||null,has_real_url:Boolean(actualUrl)});
     }
     return res.status(200).json({ok:true,total:listings.length,matched,ambiguous,unmatched,results});
   }catch(err){console.error('Marketplace reconcile failed',err);return res.status(500).json({error:err.message||'Marketplace reconcile failed'});}
