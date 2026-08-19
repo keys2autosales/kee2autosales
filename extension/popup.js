@@ -16,7 +16,9 @@ chrome.storage.local.get(['lastPayload','lastFillAt','idmsInventory','idmsCaptur
     s.className=`small ${mismatch?'err':'ok'}`;
   }
   if(facebookSellingCapture){
-    fs.textContent=`Last Facebook capture: ${facebookSellingCapture.listings?.length||0} listings${facebookSellingCaptureAt?' • '+new Date(facebookSellingCaptureAt).toLocaleString():''}`;
+    const d=facebookSellingCapture.diagnostics||{};
+    const extra=d.with_real_url!==undefined?` • ${d.with_real_url} real URLs • ${d.without_real_url||0} internal matches`:'';
+    fs.textContent=`Last Facebook capture: ${facebookSellingCapture.listings?.length||0} listings${extra}${facebookSellingCaptureAt?' • '+new Date(facebookSellingCaptureAt).toLocaleString():''}`;
     fs.className='small ok';
   }
 });
@@ -70,7 +72,9 @@ captureFacebookBtn?.addEventListener('click',async()=>{
     if(!tab?.url?.startsWith('https://www.facebook.com/marketplace/you/selling')) throw new Error('Open Facebook Marketplace → Your listings → Selling first.');
     const res=await chrome.tabs.sendMessage(tab.id,{type:'K2A_CAPTURE_FACEBOOK_SELLING'});
     if(!res?.ok) throw new Error(res?.error||'Could not read Facebook Marketplace listings.');
-    status.className='small ok'; status.textContent=`Captured ${res.count} Facebook Marketplace listings. Ready to reconcile.`;
+    const d=res.diagnostics||{};
+    status.className='small ok';
+    status.textContent=`Captured ${res.count} unique Facebook listings • ${d.with_real_url||0} real URLs • ${d.without_real_url||0} internal matches • ${d.passes||0} scan passes. Ready to reconcile.`;
   }catch(e){status.className='small err';status.textContent=e.message||String(e);}
   finally{captureFacebookBtn.disabled=false;}
 });
