@@ -18,7 +18,11 @@ function matchListing(listing,vehicles){
     return parts.length>=3 && parts.every(p=>hay.includes(p));
   });
   if(candidates.length===1) return {vehicle:candidates[0],status:'matched',reason:'unique year/make/model match'};
-  if(candidates.length>1&&price>0){const exact=candidates.filter(v=>num(v.dealer_price)===price||num(v.fb_price)===price);if(exact.length===1)return {vehicle:exact[0],status:'matched',reason:'year/make/model + exact price match'};return {vehicle:null,status:'ambiguous',reason:`${candidates.length} inventory vehicles match listing identity`};}
+  if(candidates.length>1&&price>0){
+    const exact=candidates.filter(v=>num(v.dealer_price)===price||num(v.fb_price)===price);
+    if(exact.length===1)return {vehicle:exact[0],status:'matched',reason:'year/make/model + exact price match'};
+    return {vehicle:null,status:'ambiguous',reason:`${candidates.length} inventory vehicles match listing identity`};
+  }
   return {vehicle:null,status:'unmatched',reason:candidates.length?`${candidates.length} possible matches`:'no unique inventory identity match'};
 }
 export default async function handler(req,res){
@@ -28,26 +32,30 @@ export default async function handler(req,res){
     if(!SYNC_TOKEN)return res.status(503).json({error:'IDMS_SYNC_TOKEN is not configured.'});
     if(String(req.headers.authorization||'')!==`Bearer ${SYNC_TOKEN}`)return res.status(401).json({error:'Invalid sync token'});
     const listings=Array.isArray(req.body?.listings)?req.body.listings:[];
+    const dryRun=Boolean(req.body?.dry_run);
     if(!listings.length)return res.status(400).json({error:'No Facebook Marketplace listings received.'});
     const userId=await resolveUserId(); const now=new Date().toISOString();
     const vehicles=await sb('vehicles?select=id,stock_number,vin,year,make,model_trim,dealer_price,fb_price,fb_posted,fb_listing_url,fb_status,inventory_status');
-    let matched=0,ambiguous=0,unmatched=0;
+    let matched=0,ambiguous=0,unmatched=0,withRealUrl=0;
     const results=[];
     for(const listing of listings){
       const m=matchListing(listing,vehicles);
       if(m.status==='matched') matched++; else if(m.status==='ambiguous') ambiguous++; else unmatched++;
       const captureUrl=String(listing.listing_url||listing.actual_listing_url||`k2fb://capture/${listing.listing_id||Date.now()}`);
       const actualUrl=realFacebookUrl(listing.actual_listing_url||listing.listing_url);
+      if(actualUrl) withRealUrl++;
       const capture={user_id:userId,captured_at:now,listing_id:String(listing.listing_id||''),listing_url:captureUrl,title:String(listing.title||''),price:num(listing.price)||null,status:String(listing.status||'active'),raw_text:String(listing.raw_text||'').slice(0,1200),matched_vehicle_id:m.vehicle?.id||null,match_status:m.status,match_reason:m.reason};
-      await sb('marketplace_listing_captures?on_conflict=user_id,listing_url',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(capture)});
-      if(m.vehicle){
-        const active=!['sold','draft'].includes(String(listing.status||'').toLowerCase());
-        const patch={fb_posted:active,fb_price:num(listing.price)||m.vehicle.fb_price||null,fb_status:active?'LIVE':'VERIFY',fb_last_verified_at:now,updated_at:now};
-        if(actualUrl) patch.fb_listing_url=actualUrl;
-        await sb(`vehicles?id=eq.${encodeURIComponent(m.vehicle.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify(patch)});
+      if(!dryRun){
+        await sb('marketplace_listing_captures?on_conflict=user_id,listing_url',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(capture)});
+        if(m.vehicle){
+          const active=!['sold','draft'].includes(String(listing.status||'').toLowerCase());
+          const patch={fb_posted:active,fb_price:num(listing.price)||m.vehicle.fb_price||null,fb_status:active?'LIVE':'VERIFY',fb_last_verified_at:now,updated_at:now};
+          if(actualUrl) patch.fb_listing_url=actualUrl;
+          await sb(`vehicles?id=eq.${encodeURIComponent(m.vehicle.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify(patch)});
+        }
       }
-      results.push({listing_id:listing.listing_id||'',title:listing.title||'',status:m.status,reason:m.reason,vehicle_id:m.vehicle?.id||null,has_real_url:Boolean(actualUrl)});
+      results.push({listing_id:listing.listing_id||'',title:listing.title||'',price:num(listing.price)||0,status:m.status,reason:m.reason,vehicle_id:m.vehicle?.id||null,stock_number:m.vehicle?.stock_number||null,vin:m.vehicle?.vin||null,has_real_url:Boolean(actualUrl)});
     }
-    return res.status(200).json({ok:true,total:listings.length,matched,ambiguous,unmatched,results});
+    return res.status(200).json({ok:true,dry_run:dryRun,total:listings.length,matched,ambiguous,unmatched,with_real_url:withRealUrl,without_real_url:listings.length-withRealUrl,results});
   }catch(err){console.error('Marketplace reconcile failed',err);return res.status(500).json({error:err.message||'Marketplace reconcile failed'});}
 }
