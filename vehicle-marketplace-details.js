@@ -71,4 +71,11 @@
       catch(err){console.error(err);alert('Vehicle update was not saved to the cloud.');}
     });
   };
+
+  if(!document.querySelector('script[data-k2-vin-decoder]')){
+    const s=document.createElement('script');
+    s.src='/vin-decoder.js';
+    s.dataset.k2VinDecoder='1';
+    document.head.appendChild(s);
+  }
 })();
