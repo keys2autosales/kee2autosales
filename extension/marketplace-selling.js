@@ -16,18 +16,47 @@
   const vehicleTitleFromLines=lines=>lines.find(x=>/^(19|20)\d{2}\s+[A-Za-z0-9][A-Za-z0-9 .&'\-/]{2,80}$/.test(x)&&!/\$/.test(x))||'';
   const hash=s=>{let h=2166136261;for(const ch of String(s||'')){h^=ch.charCodeAt(0);h=Math.imul(h,16777619);}return (h>>>0).toString(36);};
 
+  function itemIdFromText(value){
+    const src=String(value||'');
+    const patterns=[
+      /\/marketplace\/item\/(\d{5,})/i,
+      /marketplace%2Fitem%2F(\d{5,})/i,
+      /marketplace\\\/item\\\/(\d{5,})/i
+    ];
+    for(const re of patterns){const m=src.match(re);if(m)return m[1];}
+    return '';
+  }
+  const canonicalMarketplaceUrl=id=>id?`https://www.facebook.com/marketplace/item/${id}/`:'';
+
   function marketplaceUrlFromNode(node){
-    const anchors=[];
-    if(node?.matches?.('a[href]'))anchors.push(node);
-    anchors.push(...(node?.querySelectorAll?.('a[href]')||[]));
-    for(const a of anchors){
-      const href=String(a.href||a.getAttribute('href')||'');
-      if(!href)continue;
-      if(/\/marketplace\/item\/\d+/i.test(href))return new URL(href,location.origin).href.split('?')[0];
+    const visited=new Set();
+    let cur=node;
+    for(let depth=0;cur&&depth<9;depth++,cur=cur.parentElement){
+      if(visited.has(cur))continue;visited.add(cur);
+
+      const direct=[];
+      if(cur.matches?.('a[href]'))direct.push(cur);
+      direct.push(...(cur.querySelectorAll?.('a[href]')||[]));
+      for(const a of direct){
+        const href=String(a.href||a.getAttribute('href')||'');
+        const id=itemIdFromText(href);
+        if(id)return canonicalMarketplaceUrl(id);
+      }
+
+      for(const el of [cur,...(cur.querySelectorAll?.('*')||[])]){
+        for(const attr of (el?.attributes||[])){
+          const id=itemIdFromText(attr?.value);
+          if(id)return canonicalMarketplaceUrl(id);
+        }
+      }
+
+      const html=String(cur.outerHTML||'');
+      const id=itemIdFromText(html);
+      if(id)return canonicalMarketplaceUrl(id);
     }
     return '';
   }
-  function marketplaceIdFromUrl(url){const m=String(url||'').match(/\/marketplace\/item\/(\d+)/i);return m?m[1]:'';}
+  function marketplaceIdFromUrl(url){return itemIdFromText(url);}
 
   function looksLikeListingCard(node){
     if(!node||node.offsetParent===null)return false;
@@ -53,7 +82,7 @@
       const t=clean(el.innerText||el.getAttribute('aria-label')||'');
       if(/mark as sold|renew/i.test(t))addSeed(el);
     }
-    for(const a of document.querySelectorAll('a[href*="/marketplace/item/"]'))addSeed(a);
+    for(const a of document.querySelectorAll('a[href*="marketplace"][href*="item"]'))addSeed(a);
     return [...cards];
   }
 
@@ -98,7 +127,7 @@
 
   async function capture(){
     if(!location.pathname.startsWith('/marketplace/you/selling'))throw new Error('Open Facebook Marketplace → Your listings → Selling first.');
-    const byKey=new Map(),diag={method:'strict_single_card_progressive_scroll_v056',passes:0,card_candidates_seen:0,parsed_cards:0,unique_so_far:0,with_real_url:0,without_real_url:0,with_mileage_seen:0,with_mileage:0};
+    const byKey=new Map(),diag={method:'strict_single_card_progressive_scroll_v057',passes:0,card_candidates_seen:0,parsed_cards:0,unique_so_far:0,with_real_url:0,without_real_url:0,with_mileage_seen:0,with_mileage:0};
     collectVisible(byKey,diag);let stable=0,previousCount=byKey.size,previousHeight=0;
     for(let pass=0;pass<55&&stable<7;pass++){
       diag.passes=pass+1;const scrollers=scrollCandidates();let maxHeight=0;
